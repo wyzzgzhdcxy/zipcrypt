@@ -1,0 +1,298 @@
+:root {
+  --zc-bg: #f5f7fa;
+  --zc-border: #e4e7ed;
+  --zc-text: #303133;
+  --zc-muted: #909399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--zc-bg);
+  color: var(--zc-text);
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------------------------------------------------------------- 顶栏 */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 6px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #409eff;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--zc-text);
+}
+
+.brand .sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--zc-muted);
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.env {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 46%;
+}
+
+.env-path {
+  font-size: 12px;
+  color: var(--zc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- 卡片 */
+
+.block {
+  border-radius: 8px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #409eff;
+  color: #fff;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--zc-muted);
+  line-height: 1.7;
+  margin: 6px 0 0;
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stats .hint {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- 开关项 */
+
+.switch-row {
+  transition: opacity 0.2s;
+}
+
+.switch-row.dim {
+  opacity: 0.55;
+}
+
+.switch-label {
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.switch-label.danger {
+  color: #f56c6c;
+}
+
+/* ---------------------------------------------------------------- 计划列表 */
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 190px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: #fafafa;
+  border: 1px solid var(--zc-border);
+  border-radius: 6px;
+}
+
+.plan-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.plan-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.plan-item .hint {
+  margin: 0;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- 命令预览 */
+
+.cmd {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  color: #476582;
+  background: #f4f4f5;
+  border: 1px solid var(--zc-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- 进度 */
+
+.progress-stats {
+  margin-top: 8px;
+}
+
+.progress-stats .file {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.result-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.fail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fail-item {
+  font-size: 12px;
+  color: #f56c6c;
+  background: #fef0f0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  word-break: break-all;
+}
+
+.spin {
+  animation: zc-spin 1.1s linear infinite;
+  color: #409eff;
+}
+
+@keyframes zc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------------------------------------------------------------- 日志 */
+
+.log-box {
+  max-height: 190px;
+  overflow: auto;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-box .hint {
+  color: #808080;
+  margin: 0;
+}
+
+/* 滚动条别太粗 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
