@@ -88,6 +88,24 @@ body {
   border-radius: 8px;
 }
 
+/* 选目录那张卡：标题独占左列，输入框和统计信息在右列，整体只有一行标题 */
+.pick-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+}
+
+.pick-grid > * {
+  grid-column: 2;
+}
+
+.pick-grid > .card-head {
+  grid-column: 1;
+  grid-row: 1;
+  white-space: nowrap;
+}
+
 .card-head {
   display: flex;
   align-items: center;

@@ -380,33 +380,34 @@ onBeforeUnmount(() => {
 
       <!-- 选目录 -->
       <el-card shadow="never" class="block">
-        <template #header>
+        <!-- 标题、输入框、按钮挤在同一行，下面的统计信息跟输入框左对齐 -->
+        <div class="pick-grid">
           <div class="card-head">
             <span class="step">1</span>
             <span>选择要加密的文件夹</span>
           </div>
-        </template>
-        <div class="row">
-          <el-input
-            v-model="sourceDir"
-            placeholder="选择文件夹，或直接粘贴路径"
-            clearable
-            :disabled="running"
-          />
-          <el-button :icon="FolderOpened" :disabled="running" @click="chooseSource">选择文件夹</el-button>
-        </div>
-        <div v-if="scanning" class="hint">正在统计…</div>
-        <div v-else-if="pathError" class="path-error">
-          <el-icon><Warning /></el-icon>
-          <span>{{ pathError }}</span>
-          <span class="hint" style="margin: 0">请检查路径，或点右侧「选择文件夹」</span>
-        </div>
-        <div v-else-if="info" class="stats">
-          <el-tag size="small" type="info">{{ info.fileCount }} 个文件</el-tag>
-          <el-tag size="small" type="info">{{ info.dirCount }} 个目录</el-tag>
-          <el-tag size="small" type="info">{{ fmtBytes(info.totalSize) }}</el-tag>
-          <el-tag v-if="info.skipped > 0" size="small" type="warning">{{ info.skipped }} 项无法读取</el-tag>
-          <span class="hint">压缩包输出到 <code>{{ info.outDir }}</code></span>
+          <div class="row">
+            <el-input
+              v-model="sourceDir"
+              placeholder="选择文件夹，或直接粘贴路径"
+              clearable
+              :disabled="running"
+            />
+            <el-button :icon="FolderOpened" :disabled="running" @click="chooseSource">选择文件夹</el-button>
+          </div>
+          <div v-if="scanning" class="hint">正在统计…</div>
+          <div v-else-if="pathError" class="path-error">
+            <el-icon><Warning /></el-icon>
+            <span>{{ pathError }}</span>
+            <span class="hint" style="margin: 0">请检查路径，或点右侧「选择文件夹」</span>
+          </div>
+          <div v-else-if="info" class="stats">
+            <el-tag size="small" type="info">{{ info.fileCount }} 个文件</el-tag>
+            <el-tag size="small" type="info">{{ info.dirCount }} 个目录</el-tag>
+            <el-tag size="small" type="info">{{ fmtBytes(info.totalSize) }}</el-tag>
+            <el-tag v-if="info.skipped > 0" size="small" type="warning">{{ info.skipped }} 项无法读取</el-tag>
+            <span class="hint">压缩包输出到 <code>{{ info.outDir }}</code></span>
+          </div>
         </div>
       </el-card>
 
