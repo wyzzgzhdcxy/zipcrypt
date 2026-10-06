@@ -142,10 +142,10 @@ export interface Result {
 }
 
 /**
- * Settings 前端持久化的界面设置
+ * Settings 前端持久化的界面设置。
+ * 源目录不持久化：每次启动都要求重新选择，避免误打包上次的路径。
  */
 export interface Settings {
-    "sourceDir": string;
     "sevenZipPath": string;
     "splitSubDirs": boolean;
     "overwrite": boolean;

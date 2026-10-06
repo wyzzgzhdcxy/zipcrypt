@@ -236,7 +236,6 @@ async function start() {
 
   try {
     await Service.SaveSettings({
-      sourceDir: sourceDir.value,
       sevenZipPath: sevenZip.value?.path ?? '',
       splitSubDirs: splitSubDirs.value,
       overwrite: overwrite.value,
@@ -325,9 +324,8 @@ onMounted(async () => {
     sevenZip.value = boot.sevenZip
     splitSubDirs.value = !!boot.settings?.splitSubDirs
     overwrite.value = boot.settings?.overwrite ?? true
-    if (boot.settings?.sourceDir) {
-      await loadSource(boot.settings.sourceDir)
-    }
+    // 源目录不恢复，每次启动都从空开始，避免误用上次的路径直接打包
+    sourceDir.value = ''
   } catch (e) {
     ElMessage.error(`初始化失败：${String((e as Error)?.message ?? e)}`)
   }
@@ -519,12 +517,6 @@ onBeforeUnmount(() => {
             <div v-for="f in result.failed" :key="f" class="fail-item">{{ f }}</div>
           </div>
           <div class="actions">
-            <el-button type="primary" :icon="FolderOpened" :disabled="!result.outputDir" @click="openOutput(true)">
-              打开加密文件所在目录
-            </el-button>
-            <el-button :icon="FolderOpened" :disabled="!result.outputDir" @click="openOutput(false)">
-              只打开目录
-            </el-button>
             <span v-if="result.elapsedMs > 0" class="hint">用时 {{ fmtDuration(result.elapsedMs) }}</span>
           </div>
         </div>

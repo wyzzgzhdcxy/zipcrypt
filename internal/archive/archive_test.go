@@ -405,13 +405,18 @@ func TestLoadSaveSettingsRoundTrip(t *testing.T) {
 	if _, err := configDir(); err != nil {
 		t.Fatalf("配置目录不可用: %v", err)
 	}
-	in := Settings{SourceDir: `D:\x`, SplitSubDirs: true, Overwrite: true}
+	in := Settings{SevenZipPath: `C:\Program Files\7-Zip\7z.exe`, SplitSubDirs: true, Overwrite: true}
 	if err := SaveSettings(in); err != nil {
 		t.Fatalf("SaveSettings 失败: %v", err)
 	}
 	out := LoadSettings()
-	if out.SourceDir != in.SourceDir || !out.SplitSubDirs || !out.Overwrite {
+	if out.SevenZipPath != in.SevenZipPath || !out.SplitSubDirs || !out.Overwrite {
 		t.Errorf("读回的设置与写入不一致: %+v", out)
+	}
+	// 源目录不再持久化：旧配置里残留的 sourceDir 必须被忽略，
+	// 否则用户上次选的路径会被下次启动悄悄带回来
+	if _, ok := reflect.TypeOf(Settings{}).FieldByName("SourceDir"); ok {
+		t.Error("Settings 不应再有 SourceDir 字段（源目录不再持久化）")
 	}
 	// 旧版本配置里残留的字段（outputDir/archiveName/password/deleteSource）
 	// 必须被忽略，不能再影响行为
@@ -451,26 +456,6 @@ func keysOf(targets []target) []string {
 
 func labelsOf(targets []target) []string { return keysOf(targets) }
 
-func TestExplorerArgs(t *testing.T) {
-	// 打开目录
-	got := explorerOpenArgs(`D:\videos\合集`)
-	if len(got) != 2 || got[0] != "explorer.exe" || got[1] != `D:\videos\合集` {
-		t.Errorf("打开目录参数不对: %v", got)
-	}
-
-	// 打开并选中：/select, 必须和路径同属一个参数，路径带空格才不会散
-	got = explorerRevealArgs(`D:\Program Files\合集\jp_ry.7z`)
-	if len(got) != 2 || got[0] != "explorer.exe" {
-		t.Fatalf("选中文件参数个数不对: %v", got)
-	}
-	if want := `/select,"D:\Program Files\合集\jp_ry.7z"`; got[1] != want {
-		t.Errorf("选中文件参数 =\n%q\n期望\n%q", got[1], want)
-	}
-	if !strings.HasPrefix(got[1], "/select,\"") {
-		t.Error("必须用 /select,\" 紧贴路径的写法")
-	}
-}
-
 func TestOpenOutputDirValidatesPaths(t *testing.T) {
 	svc := NewService()
 	dir := t.TempDir()
@@ -487,10 +472,13 @@ func TestOpenOutputDirValidatesPaths(t *testing.T) {
 	if err := svc.OpenOutputDir(filepath.Join(dir, "nope"), ""); err == nil {
 		t.Error("不存在的目录应当报错")
 	}
-	// 文件不存在时退回打开目录，逻辑上不应报错（这里只验证参数校验分支不 panic）
-	if err := startExplorer([]string{}); err == nil {
-		t.Error("空命令应当报错")
+	// 路径存在但不是目录也要拦住
+	if err := svc.OpenOutputDir(file, ""); err == nil {
+		t.Error("指向文件的路径应当报错")
 	}
+	// 注意：这里只覆盖"会报错"的分支。file 缺失时会真的去打开目录，
+	// 会弹资源管理器窗口，不属于单元测试该有的副作用，
+	// 真正的打开行为由 ZIPCRYPT_LIVE_EXPLORER=1 的用例覆盖。
 }
 
 func TestCheckSourceDir(t *testing.T) {

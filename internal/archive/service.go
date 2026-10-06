@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -227,58 +226,25 @@ func (s *Service) OpenOutputDir(dir string, file string) error {
 	if dir == "" {
 		return errors.New("输出目录为空")
 	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("目录不存在：%s", dir)
+	}
+	log.Printf("[open] dir=%q file=%q", dir, file)
 	if file != "" {
 		if fi, err := os.Stat(file); err == nil && !fi.IsDir() {
-			return s.reveal(file)
+			if err := openExplorerSelect(file); err != nil {
+				log.Printf("[open] 打开失败: %v", err)
+				return err
+			}
+			log.Printf("[open] 已打开并选中 %s", file)
+			return nil
 		}
 	}
-	return s.openFolder(dir)
-}
-
-func (s *Service) openFolder(path string) error {
-	abs, err := filepath.Abs(path)
-	if err != nil {
+	if err := openExplorerDir(dir); err != nil {
+		log.Printf("[open] 打开失败: %v", err)
 		return err
 	}
-	if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
-		return fmt.Errorf("目录不存在：%s", abs)
-	}
-	return startExplorer(explorerOpenArgs(abs))
-}
-
-func (s *Service) reveal(file string) error {
-	abs, err := filepath.Abs(file)
-	if err != nil {
-		return err
-	}
-	if fi, err := os.Stat(abs); err != nil || fi.IsDir() {
-		return fmt.Errorf("文件不存在：%s", abs)
-	}
-	return startExplorer(explorerRevealArgs(abs))
-}
-
-// explorerOpenArgs 打开一个目录窗口
-func explorerOpenArgs(dir string) []string {
-	return []string{"explorer.exe", dir}
-}
-
-// explorerRevealArgs 打开所在目录并选中指定文件。
-// 经典写法：/select, 必须和路径连在同一个参数里，路径带空格才不会散开。
-func explorerRevealArgs(file string) []string {
-	return []string{"explorer.exe", `/select,"` + file + `"`}
-}
-
-func startExplorer(args []string) error {
-	if len(args) == 0 {
-		return errors.New("没有可执行的命令")
-	}
-	cmd := exec.Command(args[0], args[1:]...)
-	configureCmd(cmd)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	// explorer 是"启动即返回"的壳进程，Wait 只是回收，不看退出码
-	go func() { _ = cmd.Wait() }()
+	log.Printf("[open] 已打开 %s", dir)
 	return nil
 }
 

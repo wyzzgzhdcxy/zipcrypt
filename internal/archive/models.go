@@ -98,9 +98,9 @@ type SourceInfo struct {
 	ScanDuration int64    `json:"scanDuration"`
 }
 
-// Settings 前端持久化的界面设置
+// Settings 前端持久化的界面设置。
+// 源目录不持久化：每次启动都要求重新选择，避免误打包上次的路径。
 type Settings struct {
-	SourceDir    string `json:"sourceDir"`
 	SevenZipPath string `json:"sevenZipPath"`
 	SplitSubDirs bool   `json:"splitSubDirs"`
 	Overwrite    bool   `json:"overwrite"`
