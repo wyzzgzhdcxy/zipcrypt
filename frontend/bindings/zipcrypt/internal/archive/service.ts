@@ -26,6 +26,15 @@ export function Cancel(jobID: string): $CancellablePromise<void> {
 }
 
 /**
+ * CopyPassword 把内置密码复制到系统剪贴板。
+ * 界面不显示密码，但用户要在 7-Zip 里手动解压时总得抄这一串，
+ * 所以给一个一键复制的入口。密码由后端直接写进剪贴板，不经过前端内存。
+ */
+export function CopyPassword(): $CancellablePromise<void> {
+    return $Call.ByID(149248566);
+}
+
+/**
  * CurrentSettings 返回当前设置
  */
 export function CurrentSettings(): $CancellablePromise<$models.Settings> {

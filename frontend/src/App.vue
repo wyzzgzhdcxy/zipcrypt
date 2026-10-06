@@ -4,6 +4,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import {
   CircleCheck,
   CircleClose,
+  CopyDocument,
   Document as DocumentIcon,
   FolderOpened,
   Lock,
@@ -301,6 +302,16 @@ async function redetect() {
   )
 }
 
+/** 密码由后端直接写进系统剪贴板，前端拿不到也不需要拿到 */
+async function copyPassword() {
+  try {
+    await Service.CopyPassword()
+    ElMessage.success('密码已复制，去 7-Zip 里粘贴即可')
+  } catch (e) {
+    ElMessage.error(`复制失败：${String((e as Error)?.message ?? e)}`)
+  }
+}
+
 // ---------------------------------------------------------------- 事件
 
 onMounted(async () => {
@@ -365,6 +376,7 @@ onBeforeUnmount(() => {
             <span class="env-path">{{ sevenZip.path || sevenZip.message }}</span>
           </el-tooltip>
           <el-button size="small" :icon="Refresh" text @click="redetect">重新检测</el-button>
+          <el-button size="small" :icon="CopyDocument" @click="copyPassword">复制密码</el-button>
         </div>
       </header>
 

@@ -118,6 +118,20 @@ func (s *Service) SevenZipVersion() string {
 	return ""
 }
 
+// CopyPassword 把内置密码复制到系统剪贴板。
+// 界面不显示密码，但用户要在 7-Zip 里手动解压时总得抄这一串，
+// 所以给一个一键复制的入口。密码由后端直接写进剪贴板，不经过前端内存。
+func (s *Service) CopyPassword() error {
+	if s.App == nil {
+		return errors.New("应用尚未就绪")
+	}
+	if !s.App.Clipboard.SetText(ArchivePassword) {
+		return errors.New("写入剪贴板失败")
+	}
+	log.Printf("[clipboard] 已复制内置密码（%d 个字符）", len(ArchivePassword))
+	return nil
+}
+
 // Shutdown 退出前取消所有运行中的任务，避免留下写了一半的压缩包
 func (s *Service) Shutdown() {
 	s.mu.Lock()

@@ -315,6 +315,14 @@ func TestArchivePasswordIsHardcoded(t *testing.T) {
 	}
 }
 
+// TestCopyPasswordNeedsApp 覆盖 App 为 nil 时的复制：必须返回错误而不是 panic
+func TestCopyPasswordNeedsApp(t *testing.T) {
+	svc := NewService() // App 保持 nil
+	if err := svc.CopyPassword(); err == nil {
+		t.Fatal("App 未就绪时复制密码应报错")
+	}
+}
+
 func TestBuildTargetsRejectsMissingSource(t *testing.T) {
 	if _, err := BuildTargets(ArchiveRequest{SourceDir: filepath.Join(t.TempDir(), "nope")}); err == nil {
 		t.Fatal("源目录不存在应当报错")
