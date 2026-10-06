@@ -163,9 +163,10 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("源路径不是文件夹：%s", src)
 	}
-	if strings.TrimSpace(req.Password) == "" {
-		// -p 不带值时 7z 会交互式索要密码，GUI 里会直接卡死，这里提前拦掉
-		return nil, fmt.Errorf("密码不能为空")
+	// 密码是硬编码常量（ArchivePassword），不来自请求；
+	// 这里只做一次防御性检查，避免有人把常量改空了导致 7z 转去读控制台
+	if strings.TrimSpace(ArchivePassword) == "" {
+		return nil, fmt.Errorf("内置密码为空，无法加密")
 	}
 
 	outDir := strings.TrimSpace(req.OutputDir)

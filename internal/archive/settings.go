@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 )
 
-// DefaultPassword 用户指定的默认密码
-const DefaultPassword = "wangchaojun"
+// ArchivePassword 固定的加密密码，硬编码在程序里，界面上不可修改。
+// 需求如此：不提供输入框，也不落盘到配置文件。
+const ArchivePassword = "fdshainewqjfnsa231!23219jh"
 
 // configDir 返回配置目录：%APPDATA%\ZipCrypt
 func configDir() (string, error) {
@@ -36,10 +37,7 @@ func settingsPath() (string, error) {
 
 // LoadSettings 读取界面设置，文件不存在时返回默认值
 func LoadSettings() Settings {
-	s := Settings{
-		Password:  DefaultPassword,
-		Overwrite: true,
-	}
+	s := Settings{Overwrite: true}
 	path, err := settingsPath()
 	if err != nil {
 		return s
@@ -49,15 +47,12 @@ func LoadSettings() Settings {
 		return s
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
-		return Settings{Password: DefaultPassword, Overwrite: true}
-	}
-	if s.Password == "" {
-		s.Password = DefaultPassword
+		return Settings{Overwrite: true}
 	}
 	return s
 }
 
-// SaveSettings 落盘界面设置（密码按用户要求明文保存在本机配置里）
+// SaveSettings 落盘界面设置（密码是硬编码常量，不存这里）
 func SaveSettings(s Settings) error {
 	path, err := settingsPath()
 	if err != nil {

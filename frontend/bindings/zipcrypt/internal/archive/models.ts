@@ -21,11 +21,6 @@ export interface ArchiveRequest {
     "archiveName": string;
 
     /**
-     * Password 7z -p 参数，非空
-     */
-    "password": string;
-
-    /**
      * SplitSubDirs true = 不加密所选文件夹本身，而是把它下面的每个子文件夹各自打成一个加密包
      */
     "splitSubDirs": boolean;
@@ -47,6 +42,11 @@ export interface ArchiveRequest {
 export interface Bootstrap {
     "settings": Settings;
     "sevenZip": SevenZipInfo;
+
+    /**
+     * Password 内置的固定密码，只读展示用，界面上不可改
+     */
+    "password": string;
     "platform": string;
     "home": string;
 }
@@ -176,7 +176,6 @@ export interface Settings {
     "sourceDir": string;
     "outputDir": string;
     "archiveName": string;
-    "password": string;
     "sevenZipPath": string;
     "splitSubDirs": boolean;
     "deleteSource": boolean;

@@ -21,8 +21,6 @@ type ArchiveRequest struct {
 	OutputDir string `json:"outputDir"`
 	// ArchiveName 压缩包文件名（不含路径）。拆分模式下用作子包名前缀，为空时取源目录名
 	ArchiveName string `json:"archiveName"`
-	// Password 7z -p 参数，非空
-	Password string `json:"password"`
 	// SplitSubDirs true = 不加密所选文件夹本身，而是把它下面的每个子文件夹各自打成一个加密包
 	SplitSubDirs bool `json:"splitSubDirs"`
 	// DeleteSource 加密成功后删除源文件（危险，默认 false）
@@ -109,7 +107,6 @@ type Settings struct {
 	SourceDir    string `json:"sourceDir"`
 	OutputDir    string `json:"outputDir"`
 	ArchiveName  string `json:"archiveName"`
-	Password     string `json:"password"`
 	SevenZipPath string `json:"sevenZipPath"`
 	SplitSubDirs bool   `json:"splitSubDirs"`
 	DeleteSource bool   `json:"deleteSource"`

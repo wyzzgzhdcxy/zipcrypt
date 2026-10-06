@@ -30,7 +30,8 @@ import type {
 const sourceDir = ref('')
 const outputDir = ref('')
 const archiveName = ref('')
-const password = ref('wangchaojun')
+// 密码是后端硬编码常量（internal/archive 的 ArchivePassword），这里只读展示，不可修改
+const fixedPassword = ref('')
 const splitSubDirs = ref(false)
 const deleteSource = ref(false)
 const overwrite = ref(true)
@@ -97,8 +98,7 @@ const sevenZipOk = computed(() => sevenZip.value?.found === true)
 const commandPreview = computed(() => {
   if (!progress.value?.command) {
     const name = plannedArchives.value[0]?.name ?? 'xxx.7z'
-    const pwd = password.value ? '-p***' : '-p'
-    return `7z a -mx0 ${pwd} -mhe=on ${name} .\\${info.value?.name ?? '目录'}`
+    return `7z a -mx0 -p*** -mhe=on ${name} .\\${info.value?.name ?? '目录'}`
   }
   return progress.value.command
 })
@@ -109,11 +109,7 @@ const statusText = computed(() => {
 })
 
 const canStart = computed(
-  () =>
-    !running.value &&
-    !!info.value &&
-    !!password.value &&
-    plannedArchives.value.length > 0,
+  () => !running.value && !!info.value && plannedArchives.value.length > 0,
 )
 
 const archiveStatus = computed(() => {
@@ -239,7 +235,6 @@ async function start() {
       sourceDir: sourceDir.value,
       outputDir: outputDir.value,
       archiveName: archiveName.value,
-      password: password.value,
       sevenZipPath: sevenZip.value?.path ?? '',
       splitSubDirs: splitSubDirs.value,
       deleteSource: deleteSource.value,
@@ -254,7 +249,6 @@ async function start() {
       sourceDir: sourceDir.value,
       outputDir: outputDir.value,
       archiveName: archiveName.value,
-      password: password.value,
       splitSubDirs: splitSubDirs.value,
       deleteSource: deleteSource.value,
       overwrite: overwrite.value,
@@ -348,7 +342,7 @@ onMounted(async () => {
     splitSubDirs.value = !!boot.settings?.splitSubDirs
     deleteSource.value = !!boot.settings?.deleteSource
     overwrite.value = boot.settings?.overwrite ?? true
-    if (boot.settings?.password) password.value = boot.settings.password
+    fixedPassword.value = boot.password ?? ''
   } catch (e) {
     ElMessage.error(`初始化失败：${String((e as Error)?.message ?? e)}`)
   }
@@ -445,7 +439,13 @@ onBeforeUnmount(() => {
             </div>
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="password" :disabled="running" type="password" show-password placeholder="7z 的 -p 参数" />
+            <el-input v-model="fixedPassword" disabled>
+              <template #prefix><el-icon><Lock /></el-icon></template>
+            </el-input>
+            <div class="hint">
+              密码已硬编码在程序里（<code>internal/archive/settings.go</code> 的
+              <code>ArchivePassword</code>），界面上不可修改，也不写入配置文件。
+            </div>
           </el-form-item>
           <el-form-item label="">
             <el-checkbox v-model="overwrite" :disabled="running">覆盖同名压缩包（7z -y）</el-checkbox>

@@ -3,6 +3,7 @@ package archive
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -177,7 +178,6 @@ func TestBuildTargetsWholeFolder(t *testing.T) {
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir:   src,
 		ArchiveName: "jp_ry",
-		Password:    "wangchaojun",
 		Overwrite:   true,
 	})
 	if err != nil {
@@ -210,7 +210,6 @@ func TestBuildTargetsOutputInsideSourceAddsExclude(t *testing.T) {
 		SourceDir:   src,
 		OutputDir:   src,
 		ArchiveName: "pack",
-		Password:    "pw",
 		Overwrite:   true,
 	})
 	if err != nil {
@@ -231,7 +230,6 @@ func TestBuildTargetsSplitSubDirs(t *testing.T) {
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir:    src,
 		OutputDir:    out,
-		Password:     "pw",
 		SplitSubDirs: true,
 		Overwrite:    true,
 	})
@@ -269,7 +267,6 @@ func TestBuildTargetsSplitWithPrefix(t *testing.T) {
 		SourceDir:    src,
 		OutputDir:    t.TempDir(),
 		ArchiveName:  "jp_ry",
-		Password:     "pw",
 		SplitSubDirs: true,
 		Overwrite:    true,
 	})
@@ -281,16 +278,33 @@ func TestBuildTargetsSplitWithPrefix(t *testing.T) {
 	}
 }
 
-func TestBuildTargetsRejectsEmptyPassword(t *testing.T) {
-	src := t.TempDir()
-	// 密码为空时 -p 会让 7z 弹交互式询问，GUI 里必卡死，必须提前拦掉
-	if _, err := BuildTargets(ArchiveRequest{SourceDir: src, ArchiveName: "x", Overwrite: true}); err == nil {
-		t.Fatal("空密码应当报错")
+func TestArchivePasswordIsHardcoded(t *testing.T) {
+	// 需求：密码固定死、硬编码在程序里，界面上不可改。
+	// 请求结构里根本没有 Password 字段，任何外部输入都改不了它。
+	if strings.TrimSpace(ArchivePassword) == "" {
+		t.Fatal("内置密码不能为空，否则 7z 会转去读控制台")
+	}
+	if ArchivePassword != "fdshainewqjfnsa231!23219jh" {
+		t.Errorf("内置密码被改成了 %q", ArchivePassword)
+	}
+	// 确认请求结构里确实没有密码入口
+	rt := reflect.TypeOf(ArchiveRequest{})
+	if _, ok := rt.FieldByName("Password"); ok {
+		t.Error("ArchiveRequest 不应再有 Password 字段")
+	}
+	st := reflect.TypeOf(Settings{})
+	if _, ok := st.FieldByName("Password"); ok {
+		t.Error("Settings 不应再有 Password 字段（密码不落盘）")
+	}
+	// 固定密码必须原样出现在 -p 参数里
+	args := BuildArgs(ArchivePassword, true, target{ArchivePath: "x.7z", RelNames: []string{"d"}})
+	if !strings.Contains(strings.Join(args, " "), "-p"+ArchivePassword) {
+		t.Errorf("固定密码没有传给 7z：%v", args)
 	}
 }
 
 func TestBuildTargetsRejectsMissingSource(t *testing.T) {
-	if _, err := BuildTargets(ArchiveRequest{SourceDir: filepath.Join(t.TempDir(), "nope"), Password: "pw"}); err == nil {
+	if _, err := BuildTargets(ArchiveRequest{SourceDir: filepath.Join(t.TempDir(), "nope")}); err == nil {
 		t.Fatal("源目录不存在应当报错")
 	}
 }
@@ -302,12 +316,12 @@ func TestBuildTargetsNoOverwriteRejectsExisting(t *testing.T) {
 	mustWrite(t, filepath.Join(out, "pack.7z"), 1)
 
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "pack", Password: "pw", Overwrite: false,
+		SourceDir: src, OutputDir: out, ArchiveName: "pack", Overwrite: false,
 	}); err == nil {
 		t.Fatal("不覆盖时遇到同名包应当报错")
 	}
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "pack", Password: "pw", Overwrite: true,
+		SourceDir: src, OutputDir: out, ArchiveName: "pack", Overwrite: true,
 	}); err != nil {
 		t.Fatalf("勾选覆盖后应当可以继续：%v", err)
 	}
@@ -367,7 +381,7 @@ func TestLoadSaveSettingsRoundTrip(t *testing.T) {
 	if _, err := configDir(); err != nil {
 		t.Fatalf("配置目录不可用: %v", err)
 	}
-	in := Settings{SourceDir: `D:\x`, ArchiveName: "jp_ry", Password: "pw", SplitSubDirs: true, Overwrite: true}
+	in := Settings{SourceDir: `D:\x`, ArchiveName: "jp_ry", SplitSubDirs: true, Overwrite: true}
 	if err := SaveSettings(in); err != nil {
 		t.Fatalf("SaveSettings 失败: %v", err)
 	}

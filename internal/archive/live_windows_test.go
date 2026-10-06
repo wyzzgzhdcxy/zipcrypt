@@ -57,7 +57,7 @@ func TestLiveDeleteSourceNotRunWhen7zFails(t *testing.T) {
 
 	if _, err := svc.Start(ArchiveRequest{
 		SourceDir: src, OutputDir: out, ArchiveName: "packed",
-		Password: livePassword, DeleteSource: true, Overwrite: true,
+		DeleteSource: true, Overwrite: true,
 	}); err != nil {
 		t.Fatalf("Start 失败: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 	}
 	_, err := svc.Start(ArchiveRequest{
 		SourceDir: src, OutputDir: out, ArchiveName: "dup",
-		Password: livePassword, Overwrite: false,
+		Overwrite: false,
 	})
 	if err == nil {
 		t.Fatal("不勾选覆盖时，遇到同名包应当直接拒绝")

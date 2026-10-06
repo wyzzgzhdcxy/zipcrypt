@@ -28,7 +28,7 @@ func liveSevenZip(t *testing.T) string {
 	return info.Path
 }
 
-const livePassword = "wangchaojun"
+// livePassword 直接用程序内置的固定密码，保证用例和真实行为一致
 
 // runLive 直接跑一次 7z，退出码非 0 直接判失败并打印输出
 func runLive(t *testing.T, exe, workDir string, args ...string) string {
@@ -69,7 +69,6 @@ func TestLiveWholeFolder(t *testing.T) {
 		SourceDir:   src,
 		OutputDir:   base,
 		ArchiveName: "jp_ry",
-		Password:    livePassword,
 		Overwrite:   true,
 	}
 	targets, err := BuildTargets(req)
@@ -80,7 +79,7 @@ func TestLiveWholeFolder(t *testing.T) {
 		t.Fatalf("整体打包应只有 1 个任务，实际 %d", len(targets))
 	}
 
-	args := BuildArgs(req.Password, req.Overwrite, targets[0])
+	args := BuildArgs(ArchivePassword, req.Overwrite, targets[0])
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	res, err := runSevenZip(ctx, exe, args, targets[0].WorkDir, nil)
@@ -100,7 +99,7 @@ func TestLiveWholeFolder(t *testing.T) {
 	}
 
 	// 包内结构必须是 "精品_日语\..."，不能带整条磁盘路径
-	out := runLive(t, exe, base, "l", "-ba", "-p"+livePassword, archive)
+	out := runLive(t, exe, base, "l", "-ba", "-p"+ArchivePassword, archive)
 	if !strings.Contains(out, `精品_日语\a.mp4`) {
 		t.Errorf("包内应存在 精品_日语\\a.mp4，实际输出：\n%s", out)
 	}
@@ -110,7 +109,7 @@ func TestLiveWholeFolder(t *testing.T) {
 
 	// 解压回临时目录逐字节比对
 	extract := t.TempDir()
-	runLive(t, exe, extract, "x", "-p"+livePassword, archive)
+	runLive(t, exe, extract, "x", "-p"+ArchivePassword, archive)
 	for rel, want := range map[string]int{
 		`精品_日语\a.mp4`:          4096,
 		`精品_日语\sub\b.jpg`:      8192,
@@ -135,13 +134,13 @@ func TestLiveWrongPasswordRejected(t *testing.T) {
 
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir: src, OutputDir: base, ArchiveName: "enc",
-		Password: livePassword, Overwrite: true,
+		Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets: %v", err)
 	}
 	if _, err := runSevenZip(context.Background(), exe,
-		BuildArgs(livePassword, true, targets[0]), targets[0].WorkDir, nil); err != nil {
+		BuildArgs(ArchivePassword, true, targets[0]), targets[0].WorkDir, nil); err != nil {
 		t.Fatalf("归档失败: %v", err)
 	}
 
@@ -186,7 +185,6 @@ func TestLiveSplitSubDirs(t *testing.T) {
 	req := ArchiveRequest{
 		SourceDir:    src,
 		OutputDir:    out,
-		Password:     livePassword,
 		SplitSubDirs: true,
 		Overwrite:    true,
 	}
@@ -200,7 +198,7 @@ func TestLiveSplitSubDirs(t *testing.T) {
 
 	for i, tg := range targets {
 		res, err := runSevenZip(context.Background(), exe,
-			BuildArgs(req.Password, req.Overwrite, tg), tg.WorkDir, nil)
+			BuildArgs(ArchivePassword, req.Overwrite, tg), tg.WorkDir, nil)
 		if err != nil {
 			t.Fatalf("[%d] %s 调用失败: %v", i, tg.Label, err)
 		}
@@ -217,7 +215,7 @@ func TestLiveSplitSubDirs(t *testing.T) {
 	}
 	for name, entries := range expect {
 		archive := filepath.Join(out, name)
-		list := runLive(t, exe, out, "l", "-ba", "-p"+livePassword, archive)
+		list := runLive(t, exe, out, "l", "-ba", "-p"+ArchivePassword, archive)
 		for _, e := range entries {
 			if !strings.Contains(list, e) {
 				t.Errorf("%s 里缺少 %s：\n%s", name, e, list)
@@ -240,7 +238,7 @@ func TestLiveOutputInsideSourceIsExcluded(t *testing.T) {
 	// 输出目录 = 源目录本身：压缩包会边写边被扫描，必须靠 -x! 排除自己
 	req := ArchiveRequest{
 		SourceDir: src, OutputDir: src, ArchiveName: "pack",
-		Password: livePassword, Overwrite: true,
+		Overwrite: true,
 	}
 	targets, err := BuildTargets(req)
 	if err != nil {
@@ -250,14 +248,14 @@ func TestLiveOutputInsideSourceIsExcluded(t *testing.T) {
 		t.Fatalf("应自动排除自身，实际 Exclude=%q", targets[0].Exclude)
 	}
 	res, err := runSevenZip(context.Background(), exe,
-		BuildArgs(req.Password, true, targets[0]), targets[0].WorkDir, nil)
+		BuildArgs(ArchivePassword, true, targets[0]), targets[0].WorkDir, nil)
 	if err != nil {
 		t.Fatalf("归档失败: %v", err)
 	}
 	if res.ExitCode != 0 {
 		t.Fatalf("退出码 %d\n%s", res.ExitCode, strings.Join(res.Output, "\n"))
 	}
-	if out := runLive(t, exe, src, "l", "-ba", "-p"+livePassword, targets[0].ArchivePath); strings.Contains(out, "pack.7z") {
+	if out := runLive(t, exe, src, "l", "-ba", "-p"+ArchivePassword, targets[0].ArchivePath); strings.Contains(out, "pack.7z") {
 		t.Errorf("压缩包把自己打进去了：\n%s", out)
 	}
 }
@@ -273,7 +271,7 @@ func TestLiveProgressByArchiveSize(t *testing.T) {
 	}
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir: src, OutputDir: base, ArchiveName: "big",
-		Password: livePassword, Overwrite: true,
+		Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets: %v", err)
@@ -290,7 +288,7 @@ func TestLiveProgressByArchiveSize(t *testing.T) {
 	})
 
 	if _, err := runSevenZip(context.Background(), exe,
-		BuildArgs(livePassword, true, targets[0]), targets[0].WorkDir, nil); err != nil {
+		BuildArgs(ArchivePassword, true, targets[0]), targets[0].WorkDir, nil); err != nil {
 		t.Fatalf("归档失败: %v", err)
 	}
 	cancel()
@@ -347,7 +345,7 @@ func TestLiveServiceEventFlow(t *testing.T) {
 
 	jobID, err := svc.Start(ArchiveRequest{
 		SourceDir: src, OutputDir: out, ArchiveName: "jp_ry",
-		Password: livePassword, SplitSubDirs: true, Overwrite: true,
+		SplitSubDirs: true, Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("Start 失败: %v", err)
@@ -481,7 +479,7 @@ func TestLiveServiceCancel(t *testing.T) {
 
 	jobID, err := svc.Start(ArchiveRequest{
 		SourceDir: src, OutputDir: base, ArchiveName: "cancelme",
-		Password: livePassword, Overwrite: true,
+		Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("Start 失败: %v", err)
@@ -540,7 +538,7 @@ func TestLiveServiceDeleteSource(t *testing.T) {
 
 	jobID, err := svc.Start(ArchiveRequest{
 		SourceDir: src, OutputDir: out, ArchiveName: "packed",
-		Password: livePassword, DeleteSource: true, Overwrite: true,
+		DeleteSource: true, Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("Start 失败: %v", err)

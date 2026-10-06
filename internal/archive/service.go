@@ -51,8 +51,10 @@ func NewService() *Service {
 type Bootstrap struct {
 	Settings Settings     `json:"settings"`
 	SevenZip SevenZipInfo `json:"sevenZip"`
-	Platform string       `json:"platform"`
-	Home     string       `json:"home"`
+	// Password 内置的固定密码，只读展示用，界面上不可改
+	Password string `json:"password"`
+	Platform string `json:"platform"`
+	Home     string `json:"home"`
 }
 
 func (s *Service) Bootstrap() Bootstrap {
@@ -65,6 +67,7 @@ func (s *Service) Bootstrap() Bootstrap {
 	return Bootstrap{
 		Settings: s.CurrentSettings(),
 		SevenZip: s.sevenZip,
+		Password: ArchivePassword,
 		Platform: platform,
 		Home:     home,
 	}
@@ -415,7 +418,7 @@ func (s *Service) run(ctx context.Context, jobID string, req ArchiveRequest, tar
 		}
 
 		existedBefore := fileExists(t.ArchivePath)
-		args := BuildArgs(req.Password, req.Overwrite, t)
+		args := BuildArgs(ArchivePassword, req.Overwrite, t)
 		em.send(Progress{
 			// 起始百分比是"前面几个包已经完成"的比例，
 			// 填 0 会让进度条在切换到下一个包时往回跳
