@@ -138,16 +138,6 @@ export interface Result {
      */
     "totalBytes": number;
     "elapsedMs": number;
-
-    /**
-     * 实际删除的源路径
-     */
-    "removed": string[] | null;
-
-    /**
-     * 删除清单日志路径（可回溯）
-     */
-    "removedLog": string;
     "error": string;
 }
 

@@ -59,8 +59,6 @@ type Result struct {
 	OutputDir  string   `json:"outputDir"`  // 输出目录
 	TotalBytes int64    `json:"totalBytes"` // 源数据总字节
 	ElapsedMs  int64    `json:"elapsedMs"`
-	Removed    []string `json:"removed"`    // 实际删除的源路径
-	RemovedLog string   `json:"removedLog"` // 删除清单日志路径（可回溯）
 	Error      string   `json:"error"`
 }
 
