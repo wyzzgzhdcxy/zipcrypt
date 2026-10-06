@@ -24,10 +24,10 @@ body {
   font-size: 14px;
 }
 
+/* 内容铺满窗口，四边不留缝隙 */
 .page {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 18px 20px 40px;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -35,12 +35,13 @@ body {
 
 /* ---------------------------------------------------------------- 顶栏 */
 
+/* .page 已经没有外边距了，顶栏自己留出内边距，免得标题贴着窗口边 */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 2px 2px 6px;
+  padding: 12px 16px 8px;
 }
 
 .brand {
