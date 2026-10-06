@@ -14,7 +14,7 @@ const (
 
 // ArchiveRequest 前端提交的一次加密请求。
 // 输出位置和文件名都不在这里：输出固定为源目录的上一级，
-// 包名固定为「源目录名.7z」（拆分模式下为「子目录名.7z」）。
+// 包名固定为「源目录名.时间戳.7z」（拆分模式下为「子目录名.时间戳.7z」）。
 type ArchiveRequest struct {
 	// SourceDir 要加密的源文件夹（必填）
 	SourceDir string `json:"sourceDir"`
@@ -22,6 +22,9 @@ type ArchiveRequest struct {
 	SplitSubDirs bool `json:"splitSubDirs"`
 	// Overwrite 已存在同名压缩包时是否覆盖（对应 7z -y）
 	Overwrite bool `json:"overwrite"`
+	// Stamp 包名里的时间戳（yyyymmddhhmmss）。
+	// 前端从 Inspect 结果里原样回传，保证预览包名和真实产物一致；留空则用当前时间。
+	Stamp string `json:"stamp"`
 }
 
 // Progress 进度事件负载，通过 "archive:progress" 事件推送
@@ -92,10 +95,12 @@ type SourceInfo struct {
 	Skipped    int          `json:"skipped"`
 	// OutDir 输出目录：固定为源目录的上一级
 	OutDir string `json:"outDir"`
-	// OutName 输出文件名：整体模式为「文件夹名.7z」，拆分模式下为子目录名列表
-	OutName      string   `json:"outName"`
-	OutNames     []string `json:"outNames"`
-	ScanDuration int64    `json:"scanDuration"`
+	// OutName 输出文件名：整体模式为「文件夹名.时间戳.7z」，拆分模式下为子目录名列表
+	OutName  string   `json:"outName"`
+	OutNames []string `json:"outNames"`
+	// Stamp 本次预览定下的时间戳，前端点"开始加密"时原样回传
+	Stamp        string `json:"stamp"`
+	ScanDuration int64  `json:"scanDuration"`
 }
 
 // Settings 前端持久化的界面设置。

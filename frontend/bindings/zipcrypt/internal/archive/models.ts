@@ -4,7 +4,7 @@
 /**
  * ArchiveRequest 前端提交的一次加密请求。
  * 输出位置和文件名都不在这里：输出固定为源目录的上一级，
- * 包名固定为「源目录名.7z」（拆分模式下为「子目录名.7z」）。
+ * 包名固定为「源目录名.时间戳.7z」（拆分模式下为「子目录名.时间戳.7z」）。
  */
 export interface ArchiveRequest {
     /**
@@ -21,6 +21,12 @@ export interface ArchiveRequest {
      * Overwrite 已存在同名压缩包时是否覆盖（对应 7z -y）
      */
     "overwrite": boolean;
+
+    /**
+     * Stamp 包名里的时间戳（yyyymmddhhmmss）。
+     * 前端从 Inspect 结果里原样回传，保证预览包名和真实产物一致；留空则用当前时间。
+     */
+    "stamp": string;
 }
 
 /**
@@ -182,10 +188,15 @@ export interface SourceInfo {
     "outDir": string;
 
     /**
-     * OutName 输出文件名：整体模式为「文件夹名.7z」，拆分模式下为子目录名列表
+     * OutName 输出文件名：整体模式为「文件夹名.时间戳.7z」，拆分模式下为子目录名列表
      */
     "outName": string;
     "outNames": string[] | null;
+
+    /**
+     * Stamp 本次预览定下的时间戳，前端点"开始加密"时原样回传
+     */
+    "stamp": string;
     "scanDuration": number;
 }
 

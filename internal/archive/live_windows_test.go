@@ -57,6 +57,7 @@ func TestLiveFailureKeepsSourceAndCleansPartial(t *testing.T) {
 	if _, err := svc.Start(ArchiveRequest{
 		SourceDir: src,
 		Overwrite: true,
+		Stamp:     testStamp,
 	}); err != nil {
 		t.Fatalf("Start 失败: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestLiveFailureKeepsSourceAndCleansPartial(t *testing.T) {
 	}
 
 	// 半成品不能留在输出目录里
-	archive := filepath.Join(base, "重要资料.7z")
+	archive := filepath.Join(base, "重要资料."+testStamp+".7z")
 	if _, err := os.Stat(archive); err == nil {
 		t.Error("失败的归档留下了半成品压缩包")
 	}
@@ -104,9 +105,10 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 	base := t.TempDir()
 	src := filepath.Join(base, "src")
 	writeLive(t, filepath.Join(src, "a.txt"), 100, "A")
-	// 输出位置由规则决定：源目录上一级 + 文件夹名.7z
+	// 输出位置由规则决定：源目录上一级 + 文件夹名.时间戳.7z
 	const oldBody = "OLD-CONTENT"
-	if err := os.WriteFile(filepath.Join(base, "src.7z"), []byte(oldBody), 0o644); err != nil {
+	old := filepath.Join(base, "src."+testStamp+".7z")
+	if err := os.WriteFile(old, []byte(oldBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,7 +117,7 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 		t.Skip("Service 没探测到 7z")
 	}
 	_, err := svc.Start(ArchiveRequest{
-		SourceDir: src, Overwrite: false,
+		SourceDir: src, Overwrite: false, Stamp: testStamp,
 	})
 	if err == nil {
 		t.Fatal("不勾选覆盖时，遇到同名包应当直接拒绝")
@@ -126,7 +128,7 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 	if _, statErr := os.Stat(src); statErr != nil {
 		t.Errorf("Start 被拒后源目录不应被动过: %v", statErr)
 	}
-	if body, readErr := os.ReadFile(filepath.Join(base, "src.7z")); readErr != nil || string(body) != oldBody {
+	if body, readErr := os.ReadFile(old); readErr != nil || string(body) != oldBody {
 		t.Errorf("原有压缩包内容不应被改动: %v %q", readErr, string(body))
 	}
 }

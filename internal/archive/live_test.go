@@ -68,6 +68,7 @@ func TestLiveWholeFolder(t *testing.T) {
 	req := ArchiveRequest{
 		SourceDir: src,
 		Overwrite: true,
+		Stamp:     testStamp,
 	}
 	targets, err := BuildTargets(req)
 	if err != nil {
@@ -76,8 +77,8 @@ func TestLiveWholeFolder(t *testing.T) {
 	if len(targets) != 1 {
 		t.Fatalf("整体打包应只有 1 个任务，实际 %d", len(targets))
 	}
-	// 压缩包必须落在源目录的上一级，名字是文件夹名
-	if want := filepath.Join(base, "精品_日语.7z"); targets[0].ArchivePath != want {
+	// 压缩包必须落在源目录的上一级，名字是 文件夹名.时间戳.7z
+	if want := filepath.Join(base, "精品_日语."+testStamp+".7z"); targets[0].ArchivePath != want {
 		t.Fatalf("输出路径 = %s, 期望 %s", targets[0].ArchivePath, want)
 	}
 
@@ -189,6 +190,7 @@ func TestLiveSplitSubDirs(t *testing.T) {
 		SourceDir:    src,
 		SplitSubDirs: true,
 		Overwrite:    true,
+		Stamp:        testStamp,
 	}
 	targets, err := BuildTargets(req)
 	if err != nil {
@@ -211,9 +213,9 @@ func TestLiveSplitSubDirs(t *testing.T) {
 
 	// 每个包都只含自己那一份内容，且带原目录名
 	expect := map[string][]string{
-		"动画.7z":    {`动画\a1.mp4`, `动画\a2.mp4`},
-		"漫画.7z":    {`漫画\b1.jpg`},
-		"根目录文件.7z": {`说明.txt`},
+		"动画." + testStamp + ".7z":    {`动画\a1.mp4`, `动画\a2.mp4`},
+		"漫画." + testStamp + ".7z":    {`漫画\b1.jpg`},
+		"根目录文件." + testStamp + ".7z": {`说明.txt`},
 	}
 	for name, entries := range expect {
 		archive := filepath.Join(out, name)
@@ -224,8 +226,8 @@ func TestLiveSplitSubDirs(t *testing.T) {
 			}
 		}
 		// 不能串包：动画包里不该出现漫画的内容
-		if name == "动画.7z" && strings.Contains(list, `漫画\b1.jpg`) {
-			t.Errorf("动画.7z 里混进了漫画内容：\n%s", list)
+		if name == "动画."+testStamp+".7z" && strings.Contains(list, `漫画\b1.jpg`) {
+			t.Errorf("%s 里混进了漫画内容：\n%s", name, list)
 		}
 	}
 }
@@ -456,13 +458,14 @@ func TestLiveServiceCancel(t *testing.T) {
 	jobID, err := svc.Start(ArchiveRequest{
 		SourceDir: src,
 		Overwrite: true,
+		Stamp:     testStamp,
 	})
 	if err != nil {
 		t.Fatalf("Start 失败: %v", err)
 	}
 
 	// 等到压缩包文件出现（说明 7z 已经在写）再取消
-	archive := filepath.Join(base, "big.7z")
+	archive := filepath.Join(base, "big."+testStamp+".7z")
 	for i := 0; i < 200; i++ {
 		if _, err := os.Stat(archive); err == nil {
 			break

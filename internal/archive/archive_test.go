@@ -8,6 +8,9 @@ import (
 	"testing"
 )
 
+// testStamp 固定时间戳，让包名断言可预期
+const testStamp = "20261006092610"
+
 func TestBuildArgsMatchesUserCommand(t *testing.T) {
 	tgt := target{
 		WorkDir:     `D:\videos`,
@@ -179,6 +182,7 @@ func TestBuildTargetsWholeFolder(t *testing.T) {
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir: src,
 		Overwrite: true,
+		Stamp:     testStamp,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets 失败: %v", err)
@@ -187,12 +191,12 @@ func TestBuildTargetsWholeFolder(t *testing.T) {
 		t.Fatalf("整体打包应只有 1 个 target，实际 %d", len(targets))
 	}
 	got := targets[0]
-	// 需求：包名固定为「文件夹名.7z」
-	if want := "精品_日语.7z"; got.Label != want {
+	// 需求：包名固定为「文件夹名.时间戳.7z」
+	if want := "精品_日语." + testStamp + ".7z"; got.Label != want {
 		t.Errorf("包名 = %s, 期望 %s", got.Label, want)
 	}
 	// 需求：压缩包和源文件夹同级
-	if got.ArchivePath != filepath.Join(parent, "精品_日语.7z") {
+	if got.ArchivePath != filepath.Join(parent, "精品_日语."+testStamp+".7z") {
 		t.Errorf("输出路径 = %s, 期望与源目录同级", got.ArchivePath)
 	}
 	// 工作目录取上一级，包内才不会带整条路径
@@ -218,6 +222,7 @@ func TestBuildTargetsSplitSubDirs(t *testing.T) {
 		SourceDir:    src,
 		SplitSubDirs: true,
 		Overwrite:    true,
+		Stamp:        testStamp,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets 失败: %v", err)
@@ -233,18 +238,18 @@ func TestBuildTargetsSplitSubDirs(t *testing.T) {
 			t.Errorf("%s 没有落在与源目录同级的地方：%s", tg.Label, tg.ArchivePath)
 		}
 	}
-	// 需求：拆分模式下包名就是子目录名
-	for _, want := range []string{"动画.7z", "漫画.7z", "根目录文件.7z"} {
+	// 需求：拆分模式下包名就是 子目录名.时间戳.7z
+	for _, want := range []string{"动画." + testStamp + ".7z", "漫画." + testStamp + ".7z", "根目录文件." + testStamp + ".7z"} {
 		if _, ok := names[want]; !ok {
 			t.Errorf("缺少压缩包 %s，实际有 %v", want, keysOf(targets))
 		}
 	}
 	// 子目录包的工作目录是源目录本身，包内就是 "动画\..."
-	if got := names["动画.7z"]; got.WorkDir != src || got.RelNames[0] != "动画" {
+	if got := names["动画."+testStamp+".7z"]; got.WorkDir != src || got.RelNames[0] != "动画" {
 		t.Errorf("子目录包 WorkDir/RelNames = %s / %v", got.WorkDir, got.RelNames)
 	}
 	// 散文件包要带上全部根级文件
-	if got := names["根目录文件.7z"]; len(got.RelNames) != 1 || got.RelNames[0] != "readme.txt" {
+	if got := names["根目录文件."+testStamp+".7z"]; len(got.RelNames) != 1 || got.RelNames[0] != "readme.txt" {
 		t.Errorf("散文件包 RelNames = %v", got.RelNames)
 	}
 }
@@ -260,6 +265,7 @@ func TestBuildTargetsSplitDedupNames(t *testing.T) {
 		SourceDir:    src,
 		SplitSubDirs: true,
 		Overwrite:    true,
+		Stamp:        testStamp,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets 失败: %v", err)
@@ -268,7 +274,7 @@ func TestBuildTargetsSplitDedupNames(t *testing.T) {
 		t.Fatalf("应有 2 个包，实际 %d: %v", len(targets), labelsOf(targets))
 	}
 	labels := labelsOf(targets)
-	if labels[0] != "根目录文件.7z" || labels[1] != "根目录文件-2.7z" {
+	if labels[0] != "根目录文件."+testStamp+".7z" || labels[1] != "根目录文件-2."+testStamp+".7z" {
 		t.Errorf("散文件包应当自动错开重名，实际 %v", labels)
 	}
 	// 两个包都落在源目录上一级，且互不覆盖
@@ -319,18 +325,96 @@ func TestBuildTargetsNoOverwriteRejectsExisting(t *testing.T) {
 	parent := t.TempDir()
 	src := filepath.Join(parent, "合集")
 	mustWrite(t, filepath.Join(src, "a.txt"), 1)
-	// 已有同名包的位置由规则决定：源目录上一级 + 文件夹名.7z
-	mustWrite(t, filepath.Join(parent, "合集.7z"), 1)
+	// 已有同名包的位置由规则决定：源目录上一级 + 文件夹名.时间戳.7z
+	mustWrite(t, filepath.Join(parent, "合集."+testStamp+".7z"), 1)
 
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, Overwrite: false,
+		SourceDir: src, Overwrite: false, Stamp: testStamp,
 	}); err == nil {
 		t.Fatal("不覆盖时遇到同名包应当报错")
 	}
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, Overwrite: true,
+		SourceDir: src, Overwrite: true, Stamp: testStamp,
 	}); err != nil {
 		t.Fatalf("勾选覆盖后应当可以继续：%v", err)
+	}
+}
+
+func TestArchiveNameCarriesTimestamp(t *testing.T) {
+	// 需求：包名 = <原名>.<yyyymmddhhmmss>.7z
+	if got := archiveName("合集", testStamp); got != "合集."+testStamp+".7z" {
+		t.Errorf("包名 = %q, 期望 合集.%s.7z", got, testStamp)
+	}
+	// 已经是纯数字时间戳时原样保留（前端回传的就是这个）
+	if got := normalizeStamp(testStamp); got != testStamp {
+		t.Errorf("合法时间戳被改成了 %q", got)
+	}
+	// 空值 = 当前时间，14 位
+	for _, in := range []string{"", "   ", "abc-:-"} {
+		got := normalizeStamp(in)
+		if len(got) != len(stampLayout) {
+			t.Errorf("normalizeStamp(%q) = %q, 期望 %d 位数字", in, got, len(stampLayout))
+		}
+		for _, r := range got {
+			if r < '0' || r > '9' {
+				t.Errorf("normalizeStamp(%q) 含非数字：%q", in, got)
+				break
+			}
+		}
+	}
+	// 脏输入只保留数字并截到 14 位，绝不会把非法字符写进文件名
+	if got := normalizeStamp("2026-10-06 09:26:10.999"); got != "20261006092610" {
+		t.Errorf("脏时间戳归一化 = %q, 期望 20261006092610", got)
+	}
+	if got := normalizeStamp("1234567890123456789"); got != "12345678901234" {
+		t.Errorf("超长时间戳应截断到 14 位，实际 %q", got)
+	}
+}
+
+// TestPreviewMatchesRealOutput 是关键不变量：界面预览的包名必须和
+// 真实产物逐字一致，否则用户按预览去找文件会找不到。
+func TestPreviewMatchesRealOutput(t *testing.T) {
+	parent := t.TempDir()
+	src := filepath.Join(parent, "合集")
+	mustWrite(t, filepath.Join(src, "动画", "a.mp4"), 1)
+	mustWrite(t, filepath.Join(src, "loose.txt"), 1)
+
+	info, err := InspectSource(src)
+	if err != nil {
+		t.Fatalf("InspectSource 失败: %v", err)
+	}
+	if info.Stamp == "" {
+		t.Fatal("扫描结果必须带上时间戳，前端要靠它对齐预览名和产物名")
+	}
+
+	// 前端的真实流程：扫描拿 stamp，点开始加密时原样回传
+	whole, err := BuildTargets(ArchiveRequest{
+		SourceDir: src, Overwrite: true, Stamp: info.Stamp,
+	})
+	if err != nil {
+		t.Fatalf("BuildTargets 失败: %v", err)
+	}
+	if len(whole) != 1 || whole[0].Label != info.OutName {
+		t.Errorf("整体模式预览 %s 与产物 %v 不一致", info.OutName, labelsOf(whole))
+	}
+
+	split, err := BuildTargets(ArchiveRequest{
+		SourceDir: src, SplitSubDirs: true, Overwrite: true, Stamp: info.Stamp,
+	})
+	if err != nil {
+		t.Fatalf("BuildTargets 失败: %v", err)
+	}
+	if strings.Join(labelsOf(split), ",") != strings.Join(info.OutNames, ",") {
+		t.Errorf("拆分模式预览 %v 与产物 %v 不一致", info.OutNames, labelsOf(split))
+	}
+
+	// 不回传时间戳时也要能正常出包，不能把空串拼进文件名
+	fallback, err := BuildTargets(ArchiveRequest{SourceDir: src, Overwrite: true})
+	if err != nil {
+		t.Fatalf("未带 stamp 的 BuildTargets 失败: %v", err)
+	}
+	if !strings.HasSuffix(fallback[0].Label, ".7z") || strings.Contains(fallback[0].Label, "..") {
+		t.Errorf("兜底包名不合法：%s", fallback[0].Label)
 	}
 }
 
@@ -361,10 +445,11 @@ func TestInspectSource(t *testing.T) {
 	if info.OutDir != parent {
 		t.Errorf("输出目录 = %s, 期望 %s", info.OutDir, parent)
 	}
-	if info.OutName != "合集.7z" {
-		t.Errorf("整体模式包名 = %s, 期望 合集.7z", info.OutName)
+	// 包名带时间戳，前缀由规则定，后缀就是本次扫描的 stamp
+	if !strings.HasPrefix(info.OutName, "合集.") || !strings.HasSuffix(info.OutName, "."+info.Stamp+".7z") {
+		t.Errorf("整体模式包名 = %s, 期望 合集.%s.7z", info.OutName, info.Stamp)
 	}
-	want := []string{"sub1.7z", "sub2.7z", "根目录文件.7z"}
+	want := []string{"sub1." + info.Stamp + ".7z", "sub2." + info.Stamp + ".7z", "根目录文件." + info.Stamp + ".7z"}
 	if strings.Join(info.OutNames, ",") != strings.Join(want, ",") {
 		t.Errorf("拆分模式包名 = %v, 期望 %v", info.OutNames, want)
 	}

@@ -63,6 +63,35 @@ func ScanTree(root string) (files, dirs int, size int64, skipped int, err error)
 	return
 }
 
+// stampLayout 包名里的时间戳格式：yyyymmddhhmmss
+const stampLayout = "20060102150405"
+
+// normalizeStamp 归一化包名里的时间戳：
+// 留空 = 用当前时间；只保留数字，最多 14 位。
+// 前端扫描目录时拿到的 Stamp 会在点"开始加密"时原样回传，
+// 所以界面预览的包名和真实产物逐字一致。
+// 允许重复调用：已经是纯数字的时间戳原样返回。
+func normalizeStamp(stamp string) string {
+	var digits []rune
+	for _, r := range stamp {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, r)
+		}
+	}
+	if len(digits) == 0 {
+		return time.Now().Format(stampLayout)
+	}
+	if len(digits) > len(stampLayout) {
+		digits = digits[:len(stampLayout)]
+	}
+	return string(digits)
+}
+
+// archiveName 组压缩包名：<原名>.<yyyymmddhhmmss>.7z
+func archiveName(base, stamp string) string {
+	return base + "." + normalizeStamp(stamp) + ".7z"
+}
+
 // SanitizeName 清洗压缩包名：去掉 Windows 非法字符与首尾空白
 func SanitizeName(name string) string {
 	var b strings.Builder
@@ -81,8 +110,8 @@ func SanitizeName(name string) string {
 	if out == "" {
 		return ""
 	}
-	// Windows 长路径限制，留足 ".7z" 的余量
-	const maxRunes = 80
+	// Windows 长路径限制，后缀 ".yyyymmddhhmmss.7z" 固定占 20 个字符，留足余量
+	const maxRunes = 60
 	if r := []rune(out); len(r) > maxRunes {
 		out = string(r[:maxRunes])
 	}
@@ -130,6 +159,10 @@ func InspectSource(path string) (SourceInfo, error) {
 		return SourceInfo{}, err
 	}
 
+	// 时间戳在扫描时就定下来并回给前端：同一次选择的预览名和实际产物名必须一致，
+	// 拆分模式下所有包也共用这一个时间戳
+	stamp := normalizeStamp("")
+
 	res := SourceInfo{
 		Path:      abs,
 		Name:      filepath.Base(abs),
@@ -139,10 +172,11 @@ func InspectSource(path string) (SourceInfo, error) {
 		TotalSize: size,
 		Skipped:   skipped,
 		SubDirs:   []SubDirInfo{},
-		// 输出固定在源目录的上一级，包名固定为文件夹名
+		// 输出固定在源目录的上一级，包名固定为 文件夹名.时间戳.7z
 		OutDir:       filepath.Dir(abs),
-		OutName:      SanitizeName(filepath.Base(abs)) + ".7z",
+		OutName:      archiveName(SanitizeName(filepath.Base(abs)), stamp),
 		OutNames:     []string{},
+		Stamp:        stamp,
 		ScanDuration: time.Since(start).Milliseconds(),
 	}
 
@@ -173,17 +207,17 @@ func InspectSource(path string) (SourceInfo, error) {
 	// 这里用和 BuildTargets 完全一样的命名逻辑，好让界面预览和实际产物一致。
 	used := map[string]bool{}
 	for _, d := range res.SubDirs {
-		res.OutNames = append(res.OutNames, uniqueName(SanitizeName(d.Name), used)+".7z")
+		res.OutNames = append(res.OutNames, archiveName(uniqueName(SanitizeName(d.Name), used), stamp))
 	}
 	if res.LooseFiles > 0 {
-		res.OutNames = append(res.OutNames, uniqueName("根目录文件", used)+".7z")
+		res.OutNames = append(res.OutNames, archiveName(uniqueName("根目录文件", used), stamp))
 	}
 	return res, nil
 }
 
 // BuildTargets 把一次请求展开成若干个 7z 任务。
 // 输出位置和文件名不是用户输入：输出固定为源目录的上一级，
-// 整体模式包名为「文件夹名.7z」，拆分模式为「子目录名.7z」。
+// 整体模式包名为「文件夹名.时间戳.7z」，拆分模式为「子目录名.时间戳.7z」。
 func BuildTargets(req ArchiveRequest) ([]target, error) {
 	src, err := checkSourceDir(req.SourceDir)
 	if err != nil {
@@ -194,6 +228,10 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 	if strings.TrimSpace(ArchivePassword) == "" {
 		return nil, fmt.Errorf("内置密码为空，无法加密")
 	}
+
+	// 前端把扫描时定下的时间戳回传；没传（比如直接调后端）就用当前时间。
+	// 只在这里取一次时间，保证拆分出来的所有包时间戳完全相同。
+	stamp := normalizeStamp(req.Stamp)
 
 	// 压缩包和源文件夹同级
 	outDir := filepath.Dir(src)
@@ -212,8 +250,8 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 		t := target{
 			WorkDir:     outDir,
 			RelNames:    []string{filepath.Base(src)},
-			ArchivePath: filepath.Join(outDir, name+".7z"),
-			Label:       name + ".7z",
+			ArchivePath: filepath.Join(outDir, archiveName(name, stamp)),
+			Label:       archiveName(name, stamp),
 			FileCount:   files,
 			Bytes:       size,
 		}
@@ -243,8 +281,8 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 			targets = append(targets, target{
 				WorkDir:     src,
 				RelNames:    []string{e.Name()},
-				ArchivePath: filepath.Join(outDir, name+".7z"),
-				Label:       name + ".7z",
+				ArchivePath: filepath.Join(outDir, archiveName(name, stamp)),
+				Label:       archiveName(name, stamp),
 				FileCount:   files,
 				Bytes:       size,
 			})
@@ -262,8 +300,8 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 			targets = append(targets, target{
 				WorkDir:     src,
 				RelNames:    loose,
-				ArchivePath: filepath.Join(outDir, name+".7z"),
-				Label:       name + ".7z",
+				ArchivePath: filepath.Join(outDir, archiveName(name, stamp)),
+				Label:       archiveName(name, stamp),
 				FileCount:   len(loose),
 				Bytes:       size,
 			})

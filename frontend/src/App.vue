@@ -56,13 +56,13 @@ const plannedArchives = computed(() => {
   if (splitSubDirs.value) {
     const names = i.outNames ?? []
     const list = (i.subDirs ?? []).map((d, idx) => ({
-      name: names[idx] ?? `${d.name}.7z`,
+      name: names[idx] ?? withStamp(d.name, i.stamp),
       files: d.fileCount,
       size: d.totalSize,
     }))
     if (i.looseFiles > 0) {
       list.push({
-        name: names[names.length - 1] ?? '根目录文件.7z',
+        name: names[names.length - 1] ?? withStamp('根目录文件', i.stamp),
         files: i.looseFiles,
         size: i.looseSize,
       })
@@ -71,12 +71,17 @@ const plannedArchives = computed(() => {
   }
   return [
     {
-      name: i.outName || `${i.name}.7z`,
+      name: i.outName || withStamp(i.name, i.stamp),
       files: i.fileCount,
       size: i.totalSize,
     },
   ]
 })
+
+/** 预览名单缺失时的兜底拼接，规则和后端 archiveName 一致 */
+function withStamp(base: string, stamp?: string) {
+  return stamp ? `${base}.${stamp}.7z` : `${base}.7z`
+}
 
 const plannedTotal = computed(() => plannedArchives.value.reduce((s, a) => s + a.size, 0))
 
@@ -249,6 +254,8 @@ async function start() {
       sourceDir: sourceDir.value,
       splitSubDirs: splitSubDirs.value,
       overwrite: overwrite.value,
+      // 回传扫描阶段定下的时间戳，界面预览的包名就是真实产物名
+      stamp: info.value?.stamp ?? '',
     })
     running.value = true
   } catch (e) {
