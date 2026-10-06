@@ -66,10 +66,8 @@ func TestLiveWholeFolder(t *testing.T) {
 	writeLive(t, filepath.Join(src, "sub", "deep", "c.txt"), 1024, "C")
 
 	req := ArchiveRequest{
-		SourceDir:   src,
-		OutputDir:   base,
-		ArchiveName: "jp_ry",
-		Overwrite:   true,
+		SourceDir: src,
+		Overwrite: true,
 	}
 	targets, err := BuildTargets(req)
 	if err != nil {
@@ -77,6 +75,10 @@ func TestLiveWholeFolder(t *testing.T) {
 	}
 	if len(targets) != 1 {
 		t.Fatalf("整体打包应只有 1 个任务，实际 %d", len(targets))
+	}
+	// 压缩包必须落在源目录的上一级，名字是文件夹名
+	if want := filepath.Join(base, "精品_日语.7z"); targets[0].ArchivePath != want {
+		t.Fatalf("输出路径 = %s, 期望 %s", targets[0].ArchivePath, want)
 	}
 
 	args := BuildArgs(ArchivePassword, req.Overwrite, targets[0])
@@ -133,7 +135,7 @@ func TestLiveWrongPasswordRejected(t *testing.T) {
 	writeLive(t, filepath.Join(src, "x.txt"), 512, "S")
 
 	targets, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: base, ArchiveName: "enc",
+		SourceDir: src,
 		Overwrite: true,
 	})
 	if err != nil {
@@ -181,10 +183,10 @@ func TestLiveSplitSubDirs(t *testing.T) {
 	writeLive(t, filepath.Join(src, "漫画", "b1.jpg"), 1024, "B")
 	writeLive(t, filepath.Join(src, "说明.txt"), 256, "C")
 
-	out := t.TempDir()
+	// 压缩包和源目录同级，也就是 base
+	out := base
 	req := ArchiveRequest{
 		SourceDir:    src,
-		OutputDir:    out,
 		SplitSubDirs: true,
 		Overwrite:    true,
 	}
@@ -228,38 +230,6 @@ func TestLiveSplitSubDirs(t *testing.T) {
 	}
 }
 
-func TestLiveOutputInsideSourceIsExcluded(t *testing.T) {
-	exe := liveSevenZip(t)
-
-	src := t.TempDir()
-	writeLive(t, filepath.Join(src, "a.txt"), 512, "A")
-	writeLive(t, filepath.Join(src, "sub", "b.txt"), 512, "B")
-
-	// 输出目录 = 源目录本身：压缩包会边写边被扫描，必须靠 -x! 排除自己
-	req := ArchiveRequest{
-		SourceDir: src, OutputDir: src, ArchiveName: "pack",
-		Overwrite: true,
-	}
-	targets, err := BuildTargets(req)
-	if err != nil {
-		t.Fatalf("BuildTargets: %v", err)
-	}
-	if targets[0].Exclude != "pack.7z" {
-		t.Fatalf("应自动排除自身，实际 Exclude=%q", targets[0].Exclude)
-	}
-	res, err := runSevenZip(context.Background(), exe,
-		BuildArgs(ArchivePassword, true, targets[0]), targets[0].WorkDir, nil)
-	if err != nil {
-		t.Fatalf("归档失败: %v", err)
-	}
-	if res.ExitCode != 0 {
-		t.Fatalf("退出码 %d\n%s", res.ExitCode, strings.Join(res.Output, "\n"))
-	}
-	if out := runLive(t, exe, src, "l", "-ba", "-p"+ArchivePassword, targets[0].ArchivePath); strings.Contains(out, "pack.7z") {
-		t.Errorf("压缩包把自己打进去了：\n%s", out)
-	}
-}
-
 func TestLiveProgressByArchiveSize(t *testing.T) {
 	exe := liveSevenZip(t)
 
@@ -270,7 +240,7 @@ func TestLiveProgressByArchiveSize(t *testing.T) {
 		writeLive(t, filepath.Join(src, "f", "chunk"+string(rune('a'+i))+".bin"), 4*1024*1024, "Z")
 	}
 	targets, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: base, ArchiveName: "big",
+		SourceDir: src,
 		Overwrite: true,
 	})
 	if err != nil {
@@ -328,7 +298,7 @@ func TestLiveServiceEventFlow(t *testing.T) {
 	src := filepath.Join(base, "合集")
 	writeLive(t, filepath.Join(src, "动画", "a.mp4"), 3*1024*1024, "A")
 	writeLive(t, filepath.Join(src, "漫画", "b.jpg"), 2*1024*1024, "B")
-	out := filepath.Join(base, "out")
+	out := base // 压缩包固定落在源目录的上一级
 
 	svc := NewService()
 	if svc.SevenZipPath() == "" {
@@ -344,7 +314,7 @@ func TestLiveServiceEventFlow(t *testing.T) {
 	})
 
 	jobID, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "jp_ry",
+		SourceDir:    src,
 		SplitSubDirs: true, Overwrite: true,
 	})
 	if err != nil {
@@ -412,6 +382,12 @@ wait:
 	if result.OutputDir != out {
 		t.Errorf("输出目录 = %q, 期望 %q", result.OutputDir, out)
 	}
+	// 包名就是子目录名，落在源目录上一级
+	for _, a := range result.Archives {
+		if filepath.Dir(a) != out {
+			t.Errorf("压缩包没有落在源目录同级：%s", a)
+		}
+	}
 
 	// 进度必须单调不降，且从低到高
 	if len(progresses) < 2 {
@@ -478,7 +454,7 @@ func TestLiveServiceCancel(t *testing.T) {
 	})
 
 	jobID, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: base, ArchiveName: "cancelme",
+		SourceDir: src,
 		Overwrite: true,
 	})
 	if err != nil {
@@ -486,7 +462,7 @@ func TestLiveServiceCancel(t *testing.T) {
 	}
 
 	// 等到压缩包文件出现（说明 7z 已经在写）再取消
-	archive := filepath.Join(base, "cancelme.7z")
+	archive := filepath.Join(base, "big.7z")
 	for i := 0; i < 200; i++ {
 		if _, err := os.Stat(archive); err == nil {
 			break
@@ -512,69 +488,4 @@ func TestLiveServiceCancel(t *testing.T) {
 	case <-time.After(60 * time.Second):
 		t.Fatal("取消后没有收到 archive:done")
 	}
-}
-
-func TestLiveServiceDeleteSource(t *testing.T) {
-	liveSevenZip(t)
-
-	base := t.TempDir()
-	src := filepath.Join(base, "待清理")
-	writeLive(t, filepath.Join(src, "a.bin"), 64*1024, "A")
-	writeLive(t, filepath.Join(src, "sub", "b.bin"), 64*1024, "B")
-	out := filepath.Join(base, "out")
-
-	svc := NewService()
-	if svc.SevenZipPath() == "" {
-		t.Skip("Service 没探测到 7z")
-	}
-	results := make(chan Result, 2)
-	svc.SetEventSink(func(name string, data any) {
-		if name == "archive:done" {
-			if r, ok := data.(Result); ok {
-				results <- r
-			}
-		}
-	})
-
-	jobID, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "packed",
-		DeleteSource: true, Overwrite: true,
-	})
-	if err != nil {
-		t.Fatalf("Start 失败: %v", err)
-	}
-
-	var r Result
-	select {
-	case r = <-results:
-	case <-time.After(90 * time.Second):
-		t.Fatal("等待 archive:done 超时")
-	}
-	if !r.Success {
-		t.Fatalf("任务未成功: %+v", r)
-	}
-	if len(r.Archives) != 1 || !strings.HasSuffix(r.Archives[0], "packed.7z") {
-		t.Fatalf("产物不对: %v", r.Archives)
-	}
-	if _, err := os.Stat(r.Archives[0]); err != nil {
-		t.Errorf("压缩包没生成: %v", err)
-	}
-	if _, err := os.Stat(src); !os.IsNotExist(err) {
-		t.Error("源文件夹应已被删除")
-	}
-	if len(r.Removed) != 1 || r.Removed[0] != src {
-		t.Errorf("删除清单不对: %v", r.Removed)
-	}
-	if r.RemovedLog == "" {
-		t.Error("应写删除清单日志")
-	} else if _, err := os.Stat(r.RemovedLog); err != nil {
-		t.Errorf("删除清单日志不存在: %v", err)
-	} else {
-		t.Cleanup(func() { _ = os.Remove(r.RemovedLog) })
-		body, _ := os.ReadFile(r.RemovedLog)
-		if !strings.Contains(string(body), src) {
-			t.Errorf("删除清单里没有记录 %s:\n%s", src, body)
-		}
-	}
-	_ = jobID
 }

@@ -22,8 +22,6 @@ type target struct {
 	ArchivePath string
 	// Label 界面展示名
 	Label string
-	// DeletePaths 该 target 对应的源路径，加密成功后可删除
-	DeletePaths []string
 	// Exclude 需要排除的文件名（输出包落在源目录内部时防止把自己打进自己）
 	Exclude string
 
@@ -112,16 +110,18 @@ func InspectSource(path string) (SourceInfo, error) {
 	}
 
 	res := SourceInfo{
-		Path:         abs,
-		Name:         filepath.Base(abs),
-		Parent:       filepath.Dir(abs),
-		FileCount:    files,
-		DirCount:     dirs,
-		TotalSize:    size,
-		Skipped:      skipped,
-		SubDirs:      []SubDirInfo{},
-		DefaultOut:   filepath.Dir(abs),
-		DefaultName:  SanitizeName(filepath.Base(abs)),
+		Path:      abs,
+		Name:      filepath.Base(abs),
+		Parent:    filepath.Dir(abs),
+		FileCount: files,
+		DirCount:  dirs,
+		TotalSize: size,
+		Skipped:   skipped,
+		SubDirs:   []SubDirInfo{},
+		// 输出固定在源目录的上一级，包名固定为文件夹名
+		OutDir:       filepath.Dir(abs),
+		OutName:      SanitizeName(filepath.Base(abs)) + ".7z",
+		OutNames:     []string{},
 		ScanDuration: time.Since(start).Milliseconds(),
 	}
 
@@ -147,10 +147,22 @@ func InspectSource(path string) (SourceInfo, error) {
 		}
 	}
 	sort.Slice(res.SubDirs, func(i, j int) bool { return res.SubDirs[i].Name < res.SubDirs[j].Name })
+
+	// 拆分模式下每个子文件夹各出一个包，根目录散文件合成一个。
+	// 这里用和 BuildTargets 完全一样的命名逻辑，好让界面预览和实际产物一致。
+	used := map[string]bool{}
+	for _, d := range res.SubDirs {
+		res.OutNames = append(res.OutNames, uniqueName(SanitizeName(d.Name), used)+".7z")
+	}
+	if res.LooseFiles > 0 {
+		res.OutNames = append(res.OutNames, uniqueName("根目录文件", used)+".7z")
+	}
 	return res, nil
 }
 
-// BuildTargets 把一次请求展开成若干个 7z 任务
+// BuildTargets 把一次请求展开成若干个 7z 任务。
+// 输出位置和文件名不是用户输入：输出固定为源目录的上一级，
+// 整体模式包名为「文件夹名.7z」，拆分模式为「子目录名.7z」。
 func BuildTargets(req ArchiveRequest) ([]target, error) {
 	src, err := filepath.Abs(strings.TrimSpace(req.SourceDir))
 	if err != nil {
@@ -169,40 +181,30 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 		return nil, fmt.Errorf("内置密码为空，无法加密")
 	}
 
-	outDir := strings.TrimSpace(req.OutputDir)
-	if outDir == "" {
-		outDir = filepath.Dir(src)
-	}
-	if outDir, err = filepath.Abs(outDir); err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, fmt.Errorf("无法创建输出目录：%w", err)
-	}
+	// 压缩包和源文件夹同级
+	outDir := filepath.Dir(src)
 	if fi, err := os.Stat(outDir); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("输出目录不可用：%s", outDir)
 	}
 
-	prefix := SanitizeName(req.ArchiveName)
 	var targets []target
 
 	if !req.SplitSubDirs {
-		name := prefix
+		name := SanitizeName(filepath.Base(src))
 		if name == "" {
-			name = SanitizeName(filepath.Base(src))
+			return nil, fmt.Errorf("无法从 %s 推导出压缩包名", src)
 		}
 		files, _, size, _, _ := ScanTree(src)
 		t := target{
-			WorkDir:     filepath.Dir(src),
+			WorkDir:     outDir,
 			RelNames:    []string{filepath.Base(src)},
 			ArchivePath: filepath.Join(outDir, name+".7z"),
 			Label:       name + ".7z",
-			DeletePaths: []string{src},
 			FileCount:   files,
 			Bytes:       size,
 		}
-		// 输出包正好落在源目录里面（含"就放在源目录里"）时，必须排除掉自己，
-		// 否则 7z 扫描时会把正在写的压缩包也打进压缩包
+		// 万一输出目录就是源目录本身（源在盘根时可能出现），
+		// 必须排除掉自己，否则 7z 会把正在写的压缩包也打进压缩包
 		if sameOrInside(outDir, src) {
 			t.Exclude = filepath.Base(t.ArchivePath)
 		}
@@ -218,19 +220,17 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 			if e.Type()&fs.ModeSymlink != 0 {
 				continue
 			}
-			full := filepath.Join(src, e.Name())
 			if !e.IsDir() {
 				loose = append(loose, e.Name())
 				continue
 			}
-			files, _, size, _, _ := ScanTree(full)
-			name := uniqueName(joinPrefix(prefix, SanitizeName(e.Name())), used)
+			files, _, size, _, _ := ScanTree(filepath.Join(src, e.Name()))
+			name := uniqueName(SanitizeName(e.Name()), used)
 			targets = append(targets, target{
 				WorkDir:     src,
 				RelNames:    []string{e.Name()},
 				ArchivePath: filepath.Join(outDir, name+".7z"),
 				Label:       name + ".7z",
-				DeletePaths: []string{full},
 				FileCount:   files,
 				Bytes:       size,
 			})
@@ -239,20 +239,17 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 		// 源目录根下散落的文件单独打一个包
 		if len(loose) > 0 {
 			var size int64
-			deletePaths := make([]string, 0, len(loose))
 			for _, n := range loose {
-				deletePaths = append(deletePaths, filepath.Join(src, n))
 				if fi, err := os.Stat(filepath.Join(src, n)); err == nil {
 					size += fi.Size()
 				}
 			}
-			name := uniqueName(joinPrefix(prefix, "根目录文件"), used)
+			name := uniqueName("根目录文件", used)
 			targets = append(targets, target{
 				WorkDir:     src,
 				RelNames:    loose,
 				ArchivePath: filepath.Join(outDir, name+".7z"),
 				Label:       name + ".7z",
-				DeletePaths: deletePaths,
 				FileCount:   len(loose),
 				Bytes:       size,
 			})
@@ -275,14 +272,6 @@ func BuildTargets(req ArchiveRequest) ([]target, error) {
 		}
 	}
 	return targets, nil
-}
-
-// joinPrefix 拆分模式下的命名：前缀为空时直接用子目录名
-func joinPrefix(prefix, name string) string {
-	if prefix == "" {
-		return name
-	}
-	return prefix + "-" + name
 }
 
 // uniqueName 避免同一个输出目录里出现重名（大小写不敏感，贴近 Windows 行为）

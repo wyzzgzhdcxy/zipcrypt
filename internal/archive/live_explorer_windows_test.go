@@ -36,7 +36,7 @@ func TestLiveOpenOutputDirInExplorer(t *testing.T) {
 		}
 	})
 	if _, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: base, ArchiveName: "jp_ry",
+		SourceDir: src,
 		Overwrite: true,
 	}); err != nil {
 		t.Fatalf("Start 失败: %v", err)

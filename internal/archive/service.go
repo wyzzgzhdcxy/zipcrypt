@@ -51,10 +51,8 @@ func NewService() *Service {
 type Bootstrap struct {
 	Settings Settings     `json:"settings"`
 	SevenZip SevenZipInfo `json:"sevenZip"`
-	// Password 内置的固定密码，只读展示用，界面上不可改
-	Password string `json:"password"`
-	Platform string `json:"platform"`
-	Home     string `json:"home"`
+	Platform string       `json:"platform"`
+	Home     string       `json:"home"`
 }
 
 func (s *Service) Bootstrap() Bootstrap {
@@ -67,7 +65,6 @@ func (s *Service) Bootstrap() Bootstrap {
 	return Bootstrap{
 		Settings: s.CurrentSettings(),
 		SevenZip: s.sevenZip,
-		Password: ArchivePassword,
 		Platform: platform,
 		Home:     home,
 	}
@@ -401,7 +398,6 @@ func (s *Service) run(ctx context.Context, jobID string, req ArchiveRequest, tar
 	var (
 		archives []string
 		failed   []string
-		removed  []string
 		fatal    string
 		canceled bool
 	)
@@ -499,18 +495,6 @@ func (s *Service) run(ctx context.Context, jobID string, req ArchiveRequest, tar
 		s.logf(jobID, "info", "[%d/%d] %s 完成", i+1, steps, t.Label)
 	}
 
-	// 全部成功才允许删除源文件
-	removedLog := ""
-	if !canceled && fatal == "" && len(failed) == 0 && req.DeleteSource && len(archives) == steps {
-		em.send(Progress{Phase: PhaseDeleting, Percent: 100, Steps: steps, Total: totalBytes,
-			Message: "加密完成，正在删除源文件……"})
-		var err error
-		removed, removedLog, err = s.removeSources(targets, jobID)
-		if err != nil {
-			s.logf(jobID, "warn", "删除源文件时出错：%v", err)
-		}
-	}
-
 	success := !canceled && fatal == "" && len(failed) == 0 && len(archives) == steps
 	outDir := ""
 	if len(archives) > 0 {
@@ -527,8 +511,6 @@ func (s *Service) run(ctx context.Context, jobID string, req ArchiveRequest, tar
 		msg = fatal
 	case len(failed) > 0:
 		msg = fmt.Sprintf("%d 个压缩包失败", len(failed))
-	case req.DeleteSource && len(removed) > 0:
-		msg = fmt.Sprintf("完成，已删除 %d 项源文件（清单：%s）", len(removed), removedLog)
 	default:
 		msg = fmt.Sprintf("完成，共生成 %d 个加密包", len(archives))
 	}
@@ -540,45 +522,9 @@ func (s *Service) run(ctx context.Context, jobID string, req ArchiveRequest, tar
 		Failed:     failed,
 		OutputDir:  outDir,
 		TotalBytes: totalBytes,
-		Removed:    removed,
-		RemovedLog: removedLog,
 		Error:      msg,
 	})
 	s.logf(jobID, "info", "任务结束：%s", msg)
-}
-
-// removeSources 删除源文件，并把删除清单写入日志文件用于回溯
-func (s *Service) removeSources(targets []target, jobID string) ([]string, string, error) {
-	dir, err := configDir()
-	if err != nil {
-		return nil, "", err
-	}
-	logFile := filepath.Join(dir, fmt.Sprintf("removed-%s.log", time.Now().Format("20060102-150405")))
-
-	var removed []string
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# zipcrypt 删除清单 %s\n# job=%s\n", time.Now().Format("2006-01-02 15:04:05"), jobID)
-
-	for _, t := range targets {
-		for _, p := range t.DeletePaths {
-			if !fileExists(p) {
-				continue
-			}
-			if err := os.RemoveAll(p); err != nil {
-				fmt.Fprintf(&sb, "FAIL\t%s\t%v\n", p, err)
-				s.logf(jobID, "error", "删除失败：%s（%v）", p, err)
-				continue
-			}
-			removed = append(removed, p)
-			fmt.Fprintf(&sb, "OK\t%s\n", p)
-			s.logf(jobID, "warn", "已删除源文件：%s", p)
-		}
-	}
-
-	if err := os.WriteFile(logFile, []byte(sb.String()), 0o600); err != nil {
-		return removed, "", err
-	}
-	return removed, logFile, nil
 }
 
 func fileExists(path string) bool {

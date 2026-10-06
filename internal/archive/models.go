@@ -7,24 +7,19 @@ const (
 	PhaseScanning  = "scanning"  // 统计源目录大小
 	PhasePlanning  = "planning"  // 生成任务列表
 	PhaseArchiving = "archiving" // 7z 正在写压缩包
-	PhaseDeleting  = "deleting"  // 加密成功后删除源文件
 	PhaseDone      = "done"      // 全部成功
 	PhaseFailed    = "failed"    // 有任务失败
 	PhaseCancelled = "cancelled" // 用户中途取消
 )
 
-// ArchiveRequest 前端提交的一次加密请求
+// ArchiveRequest 前端提交的一次加密请求。
+// 输出位置和文件名都不在这里：输出固定为源目录的上一级，
+// 包名固定为「源目录名.7z」（拆分模式下为「子目录名.7z」）。
 type ArchiveRequest struct {
 	// SourceDir 要加密的源文件夹（必填）
 	SourceDir string `json:"sourceDir"`
-	// OutputDir 压缩包输出目录（为空时默认取源目录的上一级）
-	OutputDir string `json:"outputDir"`
-	// ArchiveName 压缩包文件名（不含路径）。拆分模式下用作子包名前缀，为空时取源目录名
-	ArchiveName string `json:"archiveName"`
 	// SplitSubDirs true = 不加密所选文件夹本身，而是把它下面的每个子文件夹各自打成一个加密包
 	SplitSubDirs bool `json:"splitSubDirs"`
-	// DeleteSource 加密成功后删除源文件（危险，默认 false）
-	DeleteSource bool `json:"deleteSource"`
 	// Overwrite 已存在同名压缩包时是否覆盖（对应 7z -y）
 	Overwrite bool `json:"overwrite"`
 }
@@ -87,28 +82,28 @@ type SubDirInfo struct {
 
 // SourceInfo 源目录扫描结果，用于界面预览
 type SourceInfo struct {
-	Path         string       `json:"path"`
-	Name         string       `json:"name"`
-	Parent       string       `json:"parent"`
-	FileCount    int          `json:"fileCount"`
-	DirCount     int          `json:"dirCount"`
-	TotalSize    int64        `json:"totalSize"`
-	SubDirs      []SubDirInfo `json:"subDirs"`
-	LooseFiles   int          `json:"looseFiles"`
-	LooseSize    int64        `json:"looseSize"`
-	Skipped      int          `json:"skipped"`
-	DefaultOut   string       `json:"defaultOut"`
-	DefaultName  string       `json:"defaultName"`
-	ScanDuration int64        `json:"scanDuration"`
+	Path       string       `json:"path"`
+	Name       string       `json:"name"`
+	Parent     string       `json:"parent"`
+	FileCount  int          `json:"fileCount"`
+	DirCount   int          `json:"dirCount"`
+	TotalSize  int64        `json:"totalSize"`
+	SubDirs    []SubDirInfo `json:"subDirs"`
+	LooseFiles int          `json:"looseFiles"`
+	LooseSize  int64        `json:"looseSize"`
+	Skipped    int          `json:"skipped"`
+	// OutDir 输出目录：固定为源目录的上一级
+	OutDir string `json:"outDir"`
+	// OutName 输出文件名：整体模式为「文件夹名.7z」，拆分模式下为子目录名列表
+	OutName      string   `json:"outName"`
+	OutNames     []string `json:"outNames"`
+	ScanDuration int64    `json:"scanDuration"`
 }
 
 // Settings 前端持久化的界面设置
 type Settings struct {
 	SourceDir    string `json:"sourceDir"`
-	OutputDir    string `json:"outputDir"`
-	ArchiveName  string `json:"archiveName"`
 	SevenZipPath string `json:"sevenZipPath"`
 	SplitSubDirs bool   `json:"splitSubDirs"`
-	DeleteSource bool   `json:"deleteSource"`
 	Overwrite    bool   `json:"overwrite"`
 }

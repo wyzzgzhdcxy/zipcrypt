@@ -15,7 +15,6 @@ import {
 import { Events } from '@wailsio/runtime'
 import { Service } from '../bindings/zipcrypt/internal/archive/index.js'
 import type {
-  Bootstrap,
   LogLine,
   Progress,
   Result,
@@ -23,17 +22,12 @@ import type {
   SourceInfo,
 } from '../bindings/zipcrypt/internal/archive/index.js'
 
-// ElMessage / ElMessageBox 由 unplugin-auto-import 自动注册，无需显式 import
-
 // ---------------------------------------------------------------- 状态
+// 密码是后端硬编码常量，输出位置和文件名也由规则决定，
+// 界面上都没有对应输入项。
 
 const sourceDir = ref('')
-const outputDir = ref('')
-const archiveName = ref('')
-// 密码是后端硬编码常量（internal/archive 的 ArchivePassword），这里只读展示，不可修改
-const fixedPassword = ref('')
 const splitSubDirs = ref(false)
-const deleteSource = ref(false)
 const overwrite = ref(true)
 
 const info = ref<SourceInfo | null>(null)
@@ -50,29 +44,34 @@ let scanTimer: number | undefined
 
 // ---------------------------------------------------------------- 派生
 
-/** 预计产出：拆分模式按子目录算，整体模式只有一个包 */
+/**
+ * 预计产物。包名和输出目录都由后端算好（outName / outNames / outDir），
+ * 界面上不再自己拼一遍，避免和实际产物对不上。
+ */
 const plannedArchives = computed(() => {
-  if (!info.value) return []
+  const i = info.value
+  if (!i) return []
   if (splitSubDirs.value) {
-    const list = (info.value.subDirs ?? []).map((d) => ({
-      name: `${archiveName.value ? archiveName.value + '-' : ''}${d.name}.7z`,
+    const names = i.outNames ?? []
+    const list = (i.subDirs ?? []).map((d, idx) => ({
+      name: names[idx] ?? `${d.name}.7z`,
       files: d.fileCount,
       size: d.totalSize,
     }))
-    if (info.value.looseFiles > 0) {
+    if (i.looseFiles > 0) {
       list.push({
-        name: `${archiveName.value ? archiveName.value + '-' : ''}根目录文件.7z`,
-        files: info.value.looseFiles,
-        size: info.value.looseSize,
+        name: names[names.length - 1] ?? '根目录文件.7z',
+        files: i.looseFiles,
+        size: i.looseSize,
       })
     }
     return list
   }
   return [
     {
-      name: `${archiveName.value || info.value.name}.7z`,
-      files: info.value.fileCount,
-      size: info.value.totalSize,
+      name: i.outName || `${i.name}.7z`,
+      files: i.fileCount,
+      size: i.totalSize,
     },
   ]
 })
@@ -94,13 +93,11 @@ const percent = computed(() => {
 
 const sevenZipOk = computed(() => sevenZip.value?.found === true)
 
-/** 展示给用户核对的命令（密码已打码） */
+/** 展示给用户核对的命令（密码打码） */
 const commandPreview = computed(() => {
-  if (!progress.value?.command) {
-    const name = plannedArchives.value[0]?.name ?? 'xxx.7z'
-    return `7z a -mx0 -p*** -mhe=on ${name} .\\${info.value?.name ?? '目录'}`
-  }
-  return progress.value.command
+  if (progress.value?.command) return progress.value.command
+  const name = plannedArchives.value[0]?.name ?? 'xxx.7z'
+  return `7z a -mx0 -p*** -mhe=on ${name} .\\${info.value?.name ?? '目录'}`
 })
 
 const statusText = computed(() => {
@@ -111,6 +108,9 @@ const statusText = computed(() => {
 const canStart = computed(
   () => !running.value && !!info.value && plannedArchives.value.length > 0,
 )
+
+/** 有结果就用结果里的目录，否则用规则算出来的输出目录 */
+const outputDir = computed(() => result.value?.outputDir || info.value?.outDir || '')
 
 const archiveStatus = computed(() => {
   if (!result.value) return ''
@@ -158,7 +158,7 @@ function pushLog(text: string) {
 
 // ---------------------------------------------------------------- 交互
 
-async function loadSource(path: string, keepOutput = false) {
+async function loadSource(path: string) {
   sourceDir.value = path
   if (!path) {
     info.value = null
@@ -166,12 +166,7 @@ async function loadSource(path: string, keepOutput = false) {
   }
   scanning.value = true
   try {
-    const data = await Service.Inspect(path)
-    info.value = data
-    // 没手动指定过输出目录时，默认落在源目录的上一级，
-    // 避免压缩包被打进自己所在的源文件夹里
-    if (!keepOutput || !outputDir.value) outputDir.value = data.defaultOut
-    if (!archiveName.value) archiveName.value = data.defaultName
+    info.value = await Service.Inspect(path)
     result.value = null
     progress.value = null
   } catch (e) {
@@ -185,16 +180,7 @@ async function loadSource(path: string, keepOutput = false) {
 async function chooseSource() {
   try {
     const p = await Service.PickSourceDir(sourceDir.value)
-    if (p) await loadSource(p, false)
-  } catch (e) {
-    if ((e as Error)?.message) ElMessage.error(String((e as Error).message))
-  }
-}
-
-async function chooseOutput() {
-  try {
-    const p = await Service.PickOutputDir(outputDir.value)
-    if (p) outputDir.value = p
+    if (p) await loadSource(p)
   } catch (e) {
     if ((e as Error)?.message) ElMessage.error(String((e as Error).message))
   }
@@ -205,26 +191,12 @@ watch(sourceDir, (val) => {
   if (!val || val === info.value?.path) return
   window.clearTimeout(scanTimer)
   scanTimer = window.setTimeout(() => {
-    if (val !== info.value?.path) void loadSource(val, true)
+    if (val !== info.value?.path) void loadSource(val)
   }, 600)
 })
 
 async function start() {
-  if (!canStart.value || !info.value) return
-
-  if (deleteSource.value) {
-    const n = splitSubDirs.value ? (info.value.subDirs?.length ?? 0) : 1
-    try {
-      await ElMessageBox.confirm(
-        `加密成功后将从磁盘删除源文件：${n} 个文件夹，共 ${fmtBytes(plannedTotal.value)}。` +
-          '删除不可撤销（会写一份删除清单日志到 %APPDATA%\\ZipCrypt 便于事后核对）。确认继续？',
-        '确认删除源文件？',
-        { type: 'warning', confirmButtonText: '确认删除并加密', cancelButtonText: '再想想' },
-      )
-    } catch {
-      return
-    }
-  }
+  if (!canStart.value) return
 
   logs.value = []
   progress.value = null
@@ -233,11 +205,8 @@ async function start() {
   try {
     await Service.SaveSettings({
       sourceDir: sourceDir.value,
-      outputDir: outputDir.value,
-      archiveName: archiveName.value,
       sevenZipPath: sevenZip.value?.path ?? '',
       splitSubDirs: splitSubDirs.value,
-      deleteSource: deleteSource.value,
       overwrite: overwrite.value,
     })
   } catch {
@@ -247,10 +216,7 @@ async function start() {
   try {
     jobId.value = await Service.Start({
       sourceDir: sourceDir.value,
-      outputDir: outputDir.value,
-      archiveName: archiveName.value,
       splitSubDirs: splitSubDirs.value,
-      deleteSource: deleteSource.value,
       overwrite: overwrite.value,
     })
     running.value = true
@@ -270,19 +236,12 @@ async function cancel() {
   }
 }
 
-async function openOutput() {
-  if (!result.value?.outputDir) return
+async function openOutput(selectFirst: boolean) {
+  const dir = outputDir.value
+  if (!dir) return
   try {
-    await Service.OpenOutputDir(result.value.outputDir, result.value.archives?.[0] ?? '')
-  } catch (e) {
-    ElMessage.error(String((e as Error)?.message ?? e))
-  }
-}
-
-async function openFolderOnly() {
-  if (!result.value?.outputDir) return
-  try {
-    await Service.OpenOutputDir(result.value.outputDir, '')
+    const file = selectFirst ? (result.value?.archives?.[0] ?? '') : ''
+    await Service.OpenOutputDir(dir, file)
   } catch (e) {
     ElMessage.error(String((e as Error)?.message ?? e))
   }
@@ -326,23 +285,17 @@ onMounted(async () => {
       } else {
         ElMessage.error(r.error)
       }
-      // 加密完把输出目录的压缩包列出来，方便直接点开
-      if (info.value) void loadSource(info.value.path, true)
     }),
   ]
 
   try {
-    const boot = (await Service.Bootstrap()) as Bootstrap
+    const boot = await Service.Bootstrap()
     sevenZip.value = boot.sevenZip
-    if (boot.settings?.sourceDir) {
-      await loadSource(boot.settings.sourceDir, true)
-      outputDir.value = boot.settings.outputDir || outputDir.value
-      archiveName.value = boot.settings.archiveName || archiveName.value
-    }
     splitSubDirs.value = !!boot.settings?.splitSubDirs
-    deleteSource.value = !!boot.settings?.deleteSource
     overwrite.value = boot.settings?.overwrite ?? true
-    fixedPassword.value = boot.password ?? ''
+    if (boot.settings?.sourceDir) {
+      await loadSource(boot.settings.sourceDir)
+    }
   } catch (e) {
     ElMessage.error(`初始化失败：${String((e as Error)?.message ?? e)}`)
   }
@@ -363,7 +316,7 @@ onBeforeUnmount(() => {
           <el-icon :size="22"><Lock /></el-icon>
           <div>
             <h1>ZipCrypt · 快速归档加密</h1>
-            <p class="sub">7z a -mx0 -p"******" -mhe=on &nbsp;·&nbsp; 文件头一并加密，不压缩只打包，最快</p>
+            <p class="sub">7z a -mx0 -mhe=on &nbsp;·&nbsp; 不压缩只打包，文件头一并加密，最快</p>
           </div>
         </div>
         <div class="env">
@@ -388,18 +341,18 @@ onBeforeUnmount(() => {
         class="block"
       />
 
-      <!-- 源文件夹 -->
+      <!-- 选目录 -->
       <el-card shadow="never" class="block">
         <template #header>
           <div class="card-head">
             <span class="step">1</span>
-            <span>源文件夹</span>
+            <span>选择要加密的文件夹</span>
           </div>
         </template>
         <div class="row">
           <el-input
             v-model="sourceDir"
-            placeholder="选择要加密的文件夹，或直接粘贴路径"
+            placeholder="选择文件夹，或直接粘贴路径"
             clearable
             :disabled="running"
           />
@@ -411,54 +364,16 @@ onBeforeUnmount(() => {
           <el-tag size="small" type="info">{{ info.dirCount }} 个目录</el-tag>
           <el-tag size="small" type="info">{{ fmtBytes(info.totalSize) }}</el-tag>
           <el-tag v-if="info.skipped > 0" size="small" type="warning">{{ info.skipped }} 项无法读取</el-tag>
-          <span class="hint">扫描耗时 {{ info.scanDuration }} ms</span>
+          <span class="hint">压缩包输出到 <code>{{ info.outDir }}</code></span>
         </div>
-      </el-card>
-
-      <!-- 输出设置 -->
-      <el-card shadow="never" class="block">
-        <template #header>
-          <div class="card-head">
-            <span class="step">2</span>
-            <span>压缩包</span>
-          </div>
-        </template>
-        <el-form label-width="88px" label-position="left">
-          <el-form-item label="输出目录">
-            <div class="row">
-              <el-input v-model="outputDir" :disabled="running" placeholder="默认是源文件夹的上一级" />
-              <el-button :icon="FolderOpened" :disabled="running" @click="chooseOutput">选择</el-button>
-            </div>
-          </el-form-item>
-          <el-form-item label="文件名">
-            <el-input v-model="archiveName" :disabled="running" placeholder="留空则用文件夹名">
-              <template #append>.7z</template>
-            </el-input>
-            <div v-if="splitSubDirs" class="hint">
-              拆分模式下这里是<strong>前缀</strong>：每个子文件夹生成「前缀-子目录名.7z」，留空则只用子目录名。
-            </div>
-          </el-form-item>
-          <el-form-item label="密码">
-            <el-input v-model="fixedPassword" disabled>
-              <template #prefix><el-icon><Lock /></el-icon></template>
-            </el-input>
-            <div class="hint">
-              密码已硬编码在程序里（<code>internal/archive/settings.go</code> 的
-              <code>ArchivePassword</code>），界面上不可修改，也不写入配置文件。
-            </div>
-          </el-form-item>
-          <el-form-item label="">
-            <el-checkbox v-model="overwrite" :disabled="running">覆盖同名压缩包（7z -y）</el-checkbox>
-          </el-form-item>
-        </el-form>
       </el-card>
 
       <!-- 选项 -->
       <el-card shadow="never" class="block">
         <template #header>
           <div class="card-head">
-            <span class="step">3</span>
-            <span>选项</span>
+            <span class="step">2</span>
+            <span>加密方式</span>
           </div>
         </template>
 
@@ -468,7 +383,7 @@ onBeforeUnmount(() => {
             <span class="switch-label">归档子目录到单独文件</span>
           </div>
           <p class="hint">
-            关闭：把所选文件夹整体打成一个加密包（包内保留原文件夹名）。<br />
+            关闭：把所选文件夹整体打成 <code>{{ info?.outName || '文件夹名.7z' }}</code>（包内保留原文件夹名）。<br />
             开启：不加密所选文件夹本身，而是把它下面的<strong>每个子文件夹各自打成一个独立加密包</strong>
             （根目录散落文件合成一个包）。
           </p>
@@ -478,12 +393,9 @@ onBeforeUnmount(() => {
 
         <div class="switch-row" :class="{ dim: running }">
           <div>
-            <el-switch v-model="deleteSource" :disabled="running" />
-            <span class="switch-label danger">加密成功后删除源文件</span>
+            <el-checkbox v-model="overwrite" :disabled="running">覆盖同名压缩包（7z -y）</el-checkbox>
           </div>
-          <p class="hint">
-            默认关闭。开启后会先弹确认框；删除清单会写到 %APPDATA%\ZipCrypt\removed-*.log 便于事后核对。
-          </p>
+          <p class="hint">取消勾选时，如果同名压缩包已存在会直接报错停下，不会静默覆盖。</p>
         </div>
 
         <template v-if="plannedArchives.length > 0">
@@ -521,12 +433,7 @@ onBeforeUnmount(() => {
           </el-button>
           <el-button size="large" :icon="VideoPause" :disabled="!running" @click="cancel">取消</el-button>
           <div class="spacer" />
-          <el-button
-            size="large"
-            :icon="FolderOpened"
-            :disabled="!outputDir"
-            @click="openFolderOnly"
-          >
+          <el-button size="large" :icon="FolderOpened" :disabled="!outputDir" @click="openOutput(false)">
             打开输出目录
           </el-button>
         </div>
@@ -563,13 +470,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="result" class="result-block">
-          <el-alert
-            :type="(archiveStatus as any)"
-            :title="result.error"
-            :closable="false"
-            show-icon
-            class="block"
-          />
+          <el-alert :type="(archiveStatus as any)" :title="result.error" :closable="false" show-icon class="block" />
           <div v-if="result.archives?.length" class="plan-list">
             <div v-for="a in result.archives" :key="a" class="plan-item">
               <el-icon><DocumentIcon /></el-icon>
@@ -580,12 +481,13 @@ onBeforeUnmount(() => {
           <div v-if="result.failed?.length" class="fail-list">
             <div v-for="f in result.failed" :key="f" class="fail-item">{{ f }}</div>
           </div>
-          <div v-if="result.removedLog" class="hint">
-            删除清单：{{ result.removedLog }}
-          </div>
           <div class="actions">
-            <el-button type="primary" :icon="FolderOpened" @click="openOutput">打开加密文件所在目录</el-button>
-            <el-button :icon="FolderOpened" @click="openFolderOnly">只打开目录</el-button>
+            <el-button type="primary" :icon="FolderOpened" :disabled="!result.outputDir" @click="openOutput(true)">
+              打开加密文件所在目录
+            </el-button>
+            <el-button :icon="FolderOpened" :disabled="!result.outputDir" @click="openOutput(false)">
+              只打开目录
+            </el-button>
             <span v-if="result.elapsedMs > 0" class="hint">用时 {{ fmtDuration(result.elapsedMs) }}</span>
           </div>
         </div>

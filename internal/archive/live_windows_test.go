@@ -13,7 +13,7 @@ import (
 )
 
 // lockFileExclusive 以独占方式打开文件，其他进程（包括 7z）读不到。
-// 用来制造"7z 归档中途失败"的真实场景，验证源文件不会被误删。
+// 用来制造"7z 归档中途失败"的真实场景。
 func lockFileExclusive(t *testing.T, path string) func() {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)
@@ -27,9 +27,9 @@ func lockFileExclusive(t *testing.T, path string) func() {
 	return func() { _ = windows.CloseHandle(h) }
 }
 
-// TestLiveDeleteSourceNotRunWhen7zFails 是最要命的安全性质：
-// 只要有一个包没打成功，源文件夹就绝对不能被删掉。
-func TestLiveDeleteSourceNotRunWhen7zFails(t *testing.T) {
+// TestLiveFailureKeepsSourceAndCleansPartial 制造一次真实的 7z 失败（源文件被独占锁住），
+// 验证两件事：源目录一个字节都不能少，本次写了一半的压缩包必须被清掉。
+func TestLiveFailureKeepsSourceAndCleansPartial(t *testing.T) {
 	liveSevenZip(t)
 
 	base := t.TempDir()
@@ -37,7 +37,6 @@ func TestLiveDeleteSourceNotRunWhen7zFails(t *testing.T) {
 	writeLive(t, filepath.Join(src, "ok.bin"), 4096, "A")
 	locked := filepath.Join(src, "locked.bin")
 	writeLive(t, locked, 4096, "B")
-	out := filepath.Join(base, "out")
 
 	unlock := lockFileExclusive(t, locked)
 	defer unlock()
@@ -56,8 +55,8 @@ func TestLiveDeleteSourceNotRunWhen7zFails(t *testing.T) {
 	})
 
 	if _, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "packed",
-		DeleteSource: true, Overwrite: true,
+		SourceDir: src,
+		Overwrite: true,
 	}); err != nil {
 		t.Fatalf("Start 失败: %v", err)
 	}
@@ -69,22 +68,32 @@ func TestLiveDeleteSourceNotRunWhen7zFails(t *testing.T) {
 		t.Fatal("等待 archive:done 超时")
 	}
 
-	// 无论 7z 怎么报错，源文件夹都必须在
+	// 源目录必须完好
 	if _, err := os.Stat(src); err != nil {
-		t.Fatalf("7z 失败时源文件夹被删了，这是严重 bug: %v", err)
+		t.Fatalf("源文件夹不见了，这是严重 bug: %v", err)
 	}
-	if len(r.Removed) != 0 {
-		t.Errorf("失败任务不应删除任何东西: %v", r.Removed)
+	if _, err := os.Stat(locked); err != nil {
+		t.Errorf("源文件不见了: %v", err)
 	}
+
+	// 半成品不能留在输出目录里
+	archive := filepath.Join(base, "重要资料.7z")
+	if _, err := os.Stat(archive); err == nil {
+		t.Error("失败的归档留下了半成品压缩包")
+	}
+
 	if r.Success {
-		t.Log("独占锁没能让 7z 报错（本机权限较高），源目录保留，结论一致")
-	} else {
-		if len(r.Failed) == 0 {
-			t.Errorf("失败任务应给出失败原因: %+v", r)
-		}
-		if !strings.Contains(strings.Join(r.Archives, " "), "packed.7z") {
-			t.Log("失败时半成品已被清理，符合预期")
-		}
+		t.Log("独占锁没能让 7z 报错（本机权限较高），源目录与输出目录均已检查，结论一致")
+		return
+	}
+	if len(r.Failed) == 0 {
+		t.Errorf("失败任务应给出失败原因: %+v", r)
+	}
+	if len(r.Archives) != 0 {
+		t.Errorf("失败任务不应记成功产物: %v", r.Archives)
+	}
+	if !strings.Contains(r.Error, "失败") {
+		t.Errorf("完成提示应说明失败: %q", r.Error)
 	}
 }
 
@@ -95,13 +104,9 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 	base := t.TempDir()
 	src := filepath.Join(base, "src")
 	writeLive(t, filepath.Join(src, "a.txt"), 100, "A")
-	out := filepath.Join(base, "out")
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	existing := filepath.Join(out, "dup.7z")
+	// 输出位置由规则决定：源目录上一级 + 文件夹名.7z
 	const oldBody = "OLD-CONTENT"
-	if err := os.WriteFile(existing, []byte(oldBody), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(base, "src.7z"), []byte(oldBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,8 +115,7 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 		t.Skip("Service 没探测到 7z")
 	}
 	_, err := svc.Start(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "dup",
-		Overwrite: false,
+		SourceDir: src, Overwrite: false,
 	})
 	if err == nil {
 		t.Fatal("不勾选覆盖时，遇到同名包应当直接拒绝")
@@ -122,7 +126,7 @@ func TestLiveOverwriteGuardStart(t *testing.T) {
 	if _, statErr := os.Stat(src); statErr != nil {
 		t.Errorf("Start 被拒后源目录不应被动过: %v", statErr)
 	}
-	if body, readErr := os.ReadFile(existing); readErr != nil || string(body) != oldBody {
+	if body, readErr := os.ReadFile(filepath.Join(base, "src.7z")); readErr != nil || string(body) != oldBody {
 		t.Errorf("原有压缩包内容不应被改动: %v %q", readErr, string(body))
 	}
 }

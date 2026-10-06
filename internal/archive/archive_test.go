@@ -172,13 +172,13 @@ func TestScanTreeCountsFilesAndBytes(t *testing.T) {
 }
 
 func TestBuildTargetsWholeFolder(t *testing.T) {
-	src := t.TempDir()
+	parent := t.TempDir()
+	src := filepath.Join(parent, "精品_日语")
 	mustWrite(t, filepath.Join(src, "a.txt"), 5)
 
 	targets, err := BuildTargets(ArchiveRequest{
-		SourceDir:   src,
-		ArchiveName: "jp_ry",
-		Overwrite:   true,
+		SourceDir: src,
+		Overwrite: true,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets 失败: %v", err)
@@ -187,49 +187,35 @@ func TestBuildTargetsWholeFolder(t *testing.T) {
 		t.Fatalf("整体打包应只有 1 个 target，实际 %d", len(targets))
 	}
 	got := targets[0]
-	if filepath.Base(got.ArchivePath) != "jp_ry.7z" {
-		t.Errorf("包名 = %s, 期望 jp_ry.7z", filepath.Base(got.ArchivePath))
+	// 需求：包名固定为「文件夹名.7z」
+	if want := "精品_日语.7z"; got.Label != want {
+		t.Errorf("包名 = %s, 期望 %s", got.Label, want)
+	}
+	// 需求：压缩包和源文件夹同级
+	if got.ArchivePath != filepath.Join(parent, "精品_日语.7z") {
+		t.Errorf("输出路径 = %s, 期望与源目录同级", got.ArchivePath)
 	}
 	// 工作目录取上一级，包内才不会带整条路径
-	if got.WorkDir != filepath.Dir(src) {
-		t.Errorf("WorkDir = %s, 期望 %s", got.WorkDir, filepath.Dir(src))
+	if got.WorkDir != parent {
+		t.Errorf("WorkDir = %s, 期望 %s", got.WorkDir, parent)
 	}
-	if got.RelNames[0] != filepath.Base(src) {
-		t.Errorf("RelNames = %v, 期望 [%s]", got.RelNames, filepath.Base(src))
+	if got.RelNames[0] != "精品_日语" {
+		t.Errorf("RelNames = %v, 期望 [精品_日语]", got.RelNames)
 	}
 	if got.Exclude != "" {
-		t.Errorf("输出目录在源目录外时不应排除自身，实际 %q", got.Exclude)
-	}
-}
-
-func TestBuildTargetsOutputInsideSourceAddsExclude(t *testing.T) {
-	src := t.TempDir()
-	mustWrite(t, filepath.Join(src, "a.txt"), 5)
-
-	targets, err := BuildTargets(ArchiveRequest{
-		SourceDir:   src,
-		OutputDir:   src,
-		ArchiveName: "pack",
-		Overwrite:   true,
-	})
-	if err != nil {
-		t.Fatalf("BuildTargets 失败: %v", err)
-	}
-	if got := targets[0].Exclude; got != "pack.7z" {
-		t.Errorf("Exclude = %q, 期望 pack.7z（防止把自己打进自己）", got)
+		t.Errorf("包落在源目录外时不应排除自身，实际 %q", got.Exclude)
 	}
 }
 
 func TestBuildTargetsSplitSubDirs(t *testing.T) {
-	src := t.TempDir()
+	parent := t.TempDir()
+	src := filepath.Join(parent, "合集")
 	mustWrite(t, filepath.Join(src, "动画", "a.mp4"), 1)
 	mustWrite(t, filepath.Join(src, "漫画", "b.jpg"), 1)
 	mustWrite(t, filepath.Join(src, "readme.txt"), 1)
-	out := t.TempDir()
 
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir:    src,
-		OutputDir:    out,
 		SplitSubDirs: true,
 		Overwrite:    true,
 	})
@@ -243,7 +229,11 @@ func TestBuildTargetsSplitSubDirs(t *testing.T) {
 	names := map[string]target{}
 	for _, tg := range targets {
 		names[tg.Label] = tg
+		if filepath.Dir(tg.ArchivePath) != parent {
+			t.Errorf("%s 没有落在与源目录同级的地方：%s", tg.Label, tg.ArchivePath)
+		}
 	}
+	// 需求：拆分模式下包名就是子目录名
 	for _, want := range []string{"动画.7z", "漫画.7z", "根目录文件.7z"} {
 		if _, ok := names[want]; !ok {
 			t.Errorf("缺少压缩包 %s，实际有 %v", want, keysOf(targets))
@@ -259,22 +249,38 @@ func TestBuildTargetsSplitSubDirs(t *testing.T) {
 	}
 }
 
-func TestBuildTargetsSplitWithPrefix(t *testing.T) {
-	src := t.TempDir()
-	mustWrite(t, filepath.Join(src, "a", "x.txt"), 1)
+func TestBuildTargetsSplitDedupNames(t *testing.T) {
+	parent := t.TempDir()
+	src := filepath.Join(parent, "合集")
+	// 子目录名和散文件包的默认名撞车
+	mustWrite(t, filepath.Join(src, "根目录文件", "x.txt"), 1)
+	mustWrite(t, filepath.Join(src, "readme.txt"), 1)
 
 	targets, err := BuildTargets(ArchiveRequest{
 		SourceDir:    src,
-		OutputDir:    t.TempDir(),
-		ArchiveName:  "jp_ry",
 		SplitSubDirs: true,
 		Overwrite:    true,
 	})
 	if err != nil {
 		t.Fatalf("BuildTargets 失败: %v", err)
 	}
-	if len(targets) != 1 || targets[0].Label != "jp_ry-a.7z" {
-		t.Errorf("拆分模式带前缀时应为 jp_ry-a.7z，实际 %v", labelsOf(targets))
+	if len(targets) != 2 {
+		t.Fatalf("应有 2 个包，实际 %d: %v", len(targets), labelsOf(targets))
+	}
+	labels := labelsOf(targets)
+	if labels[0] != "根目录文件.7z" || labels[1] != "根目录文件-2.7z" {
+		t.Errorf("散文件包应当自动错开重名，实际 %v", labels)
+	}
+	// 两个包都落在源目录上一级，且互不覆盖
+	seen := map[string]bool{}
+	for _, tg := range targets {
+		if seen[tg.ArchivePath] {
+			t.Errorf("输出路径冲突：%v", labels)
+		}
+		seen[tg.ArchivePath] = true
+		if filepath.Dir(tg.ArchivePath) != parent {
+			t.Errorf("%s 没有落在与源目录同级的地方：%s", tg.Label, tg.ArchivePath)
+		}
 	}
 }
 
@@ -310,25 +316,27 @@ func TestBuildTargetsRejectsMissingSource(t *testing.T) {
 }
 
 func TestBuildTargetsNoOverwriteRejectsExisting(t *testing.T) {
-	src := t.TempDir()
-	out := t.TempDir()
+	parent := t.TempDir()
+	src := filepath.Join(parent, "合集")
 	mustWrite(t, filepath.Join(src, "a.txt"), 1)
-	mustWrite(t, filepath.Join(out, "pack.7z"), 1)
+	// 已有同名包的位置由规则决定：源目录上一级 + 文件夹名.7z
+	mustWrite(t, filepath.Join(parent, "合集.7z"), 1)
 
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "pack", Overwrite: false,
+		SourceDir: src, Overwrite: false,
 	}); err == nil {
 		t.Fatal("不覆盖时遇到同名包应当报错")
 	}
 	if _, err := BuildTargets(ArchiveRequest{
-		SourceDir: src, OutputDir: out, ArchiveName: "pack", Overwrite: true,
+		SourceDir: src, Overwrite: true,
 	}); err != nil {
 		t.Fatalf("勾选覆盖后应当可以继续：%v", err)
 	}
 }
 
 func TestInspectSource(t *testing.T) {
-	src := t.TempDir()
+	parent := t.TempDir()
+	src := filepath.Join(parent, "合集")
 	mustWrite(t, filepath.Join(src, "sub1", "a.txt"), 10)
 	mustWrite(t, filepath.Join(src, "sub2", "b.txt"), 20)
 	mustWrite(t, filepath.Join(src, "loose.txt"), 5)
@@ -349,8 +357,16 @@ func TestInspectSource(t *testing.T) {
 	if info.LooseFiles != 1 || info.LooseSize != 5 {
 		t.Errorf("散文件统计 = %d/%d, 期望 1/5", info.LooseFiles, info.LooseSize)
 	}
-	if info.DefaultOut != filepath.Dir(src) {
-		t.Errorf("默认输出目录 = %s, 期望 %s", info.DefaultOut, filepath.Dir(src))
+	// 界面预览必须和真实产物一致：输出目录 = 上一级
+	if info.OutDir != parent {
+		t.Errorf("输出目录 = %s, 期望 %s", info.OutDir, parent)
+	}
+	if info.OutName != "合集.7z" {
+		t.Errorf("整体模式包名 = %s, 期望 合集.7z", info.OutName)
+	}
+	want := []string{"sub1.7z", "sub2.7z", "根目录文件.7z"}
+	if strings.Join(info.OutNames, ",") != strings.Join(want, ",") {
+		t.Errorf("拆分模式包名 = %v, 期望 %v", info.OutNames, want)
 	}
 }
 
@@ -375,19 +391,32 @@ func TestIsInside(t *testing.T) {
 	if isInside(`D:\x`, `D:\a`) {
 		t.Error("无关路径不应算内部")
 	}
+	// sameOrInside 还要把"就是同一个目录"算进去：
+	// 源目录在盘根时，压缩包会落在源目录内部，必须触发自排除
+	if !sameOrInside(`D:\a`, `D:\a`) {
+		t.Error("自身应被 sameOrInside 判为内部")
+	}
+	if sameOrInside(`D:\x`, `D:\a`) {
+		t.Error("无关路径不应算内部")
+	}
 }
 
 func TestLoadSaveSettingsRoundTrip(t *testing.T) {
 	if _, err := configDir(); err != nil {
 		t.Fatalf("配置目录不可用: %v", err)
 	}
-	in := Settings{SourceDir: `D:\x`, ArchiveName: "jp_ry", SplitSubDirs: true, Overwrite: true}
+	in := Settings{SourceDir: `D:\x`, SplitSubDirs: true, Overwrite: true}
 	if err := SaveSettings(in); err != nil {
 		t.Fatalf("SaveSettings 失败: %v", err)
 	}
 	out := LoadSettings()
-	if out.SourceDir != in.SourceDir || out.ArchiveName != in.ArchiveName || !out.SplitSubDirs {
+	if out.SourceDir != in.SourceDir || !out.SplitSubDirs || !out.Overwrite {
 		t.Errorf("读回的设置与写入不一致: %+v", out)
+	}
+	// 旧版本配置里残留的字段（outputDir/archiveName/password/deleteSource）
+	// 必须被忽略，不能再影响行为
+	if _, ok := reflect.TypeOf(Settings{}).FieldByName("DeleteSource"); ok {
+		t.Error("Settings 不应再有 DeleteSource 字段（删除源文件功能已移除）")
 	}
 }
 
