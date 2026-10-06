@@ -89,19 +89,40 @@ func SanitizeName(name string) string {
 	return strings.TrimSpace(out)
 }
 
-// InspectSource 扫描源目录，给界面做预览（文件数、总大小、子目录清单）
-func InspectSource(path string) (SourceInfo, error) {
-	start := time.Now()
-	abs, err := filepath.Abs(path)
+// checkSourceDir 校验源路径。
+// 特别拦下 "D:" 这种盘符相对路径：Go 会把它解析成"该盘上的当前目录"，
+// 用户多半只是 "D:\xxx" 还没打完，不该让他一不小心扫完整个盘。
+func checkSourceDir(path string) (string, error) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return "", fmt.Errorf("请先选择文件夹")
+	}
+	if len(p) == 2 && p[1] == ':' {
+		return "", fmt.Errorf("请输入完整路径，例如 %s\\", p)
+	}
+	abs, err := filepath.Abs(p)
 	if err != nil {
-		return SourceInfo{}, err
+		return "", err
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return SourceInfo{}, err
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("路径不存在：%s", abs)
+		}
+		return "", fmt.Errorf("无法访问：%s（%v）", abs, err)
 	}
 	if !info.IsDir() {
-		return SourceInfo{}, fmt.Errorf("%s 不是文件夹", abs)
+		return "", fmt.Errorf("这不是一个文件夹：%s", abs)
+	}
+	return abs, nil
+}
+
+// InspectSource 扫描源目录，给界面做预览（文件数、总大小、子目录清单）
+func InspectSource(path string) (SourceInfo, error) {
+	start := time.Now()
+	abs, err := checkSourceDir(path)
+	if err != nil {
+		return SourceInfo{}, err
 	}
 
 	files, dirs, size, skipped, err := ScanTree(abs)
@@ -164,16 +185,9 @@ func InspectSource(path string) (SourceInfo, error) {
 // 输出位置和文件名不是用户输入：输出固定为源目录的上一级，
 // 整体模式包名为「文件夹名.7z」，拆分模式为「子目录名.7z」。
 func BuildTargets(req ArchiveRequest) ([]target, error) {
-	src, err := filepath.Abs(strings.TrimSpace(req.SourceDir))
+	src, err := checkSourceDir(req.SourceDir)
 	if err != nil {
 		return nil, err
-	}
-	info, err := os.Stat(src)
-	if err != nil {
-		return nil, fmt.Errorf("源文件夹不存在：%s", src)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("源路径不是文件夹：%s", src)
 	}
 	// 密码是硬编码常量（ArchivePassword），不来自请求；
 	// 这里只做一次防御性检查，避免有人把常量改空了导致 7z 转去读控制台

@@ -33,6 +33,7 @@ const overwrite = ref(true)
 const info = ref<SourceInfo | null>(null)
 const sevenZip = ref<SevenZipInfo | null>(null)
 const scanning = ref(false)
+const pathError = ref('')
 const running = ref(false)
 const jobId = ref('')
 const progress = ref<Progress | null>(null)
@@ -41,6 +42,7 @@ const result = ref<Result | null>(null)
 
 let offEvents: Array<() => void> = []
 let scanTimer: number | undefined
+let scanSeq = 0
 
 // ---------------------------------------------------------------- 派生
 
@@ -162,19 +164,46 @@ async function loadSource(path: string) {
   sourceDir.value = path
   if (!path) {
     info.value = null
+    pathError.value = ''
+    scanning.value = false
     return
   }
+
+  // 序号守卫：连着敲路径会连续触发扫描，只认最后一次的结果，
+  // 否则先发后到的旧结果会覆盖新状态，错误提示也会重复弹
+  const seq = ++scanSeq
   scanning.value = true
   try {
-    info.value = await Service.Inspect(path)
+    const data = await Service.Inspect(path)
+    if (seq !== scanSeq) return
+    info.value = data
     result.value = null
     progress.value = null
+    pathError.value = ''
   } catch (e) {
+    if (seq !== scanSeq) return
     info.value = null
-    ElMessage.error(`无法读取该文件夹：${(e as Error)?.message ?? e}`)
+    // 边打字边弹 toast 太吵，而且会盖住标题栏。这里只在输入框下方
+    // 放一行内联提示，用户主动点按钮失败时才用 ElMessage
+    pathError.value = readablePathError(path, e)
   } finally {
-    scanning.value = false
+    if (seq === scanSeq) scanning.value = false
   }
+}
+
+/** 把 Go 的原始错误翻成人话 */
+function readablePathError(path: string, e: unknown): string {
+  const raw = String((e as Error)?.message ?? e)
+  if (/cannot find the path|找不到指定的文件|cannot find the file/i.test(raw)) {
+    return `路径不存在：${path}`
+  }
+  if (/access is denied|拒绝访问|denied/i.test(raw)) {
+    return `没有权限读取：${path}`
+  }
+  if (/不是文件夹|not a directory/i.test(raw)) {
+    return `这不是一个文件夹：${path}`
+  }
+  return raw
 }
 
 async function chooseSource() {
@@ -188,10 +217,13 @@ async function chooseSource() {
 
 /** 手动改路径时防抖重新扫描 */
 watch(sourceDir, (val) => {
-  if (!val || val === info.value?.path) return
   window.clearTimeout(scanTimer)
+  if (!val || val === info.value?.path) return
+  // 光标还在输入框里时不弹任何提示，等失焦或点按钮再说
+  scanning.value = false
+  pathError.value = ''
   scanTimer = window.setTimeout(() => {
-    if (val !== info.value?.path) void loadSource(val)
+    if (val === sourceDir.value && val !== info.value?.path) void loadSource(val)
   }, 600)
 })
 
@@ -359,6 +391,11 @@ onBeforeUnmount(() => {
           <el-button :icon="FolderOpened" :disabled="running" @click="chooseSource">选择文件夹</el-button>
         </div>
         <div v-if="scanning" class="hint">正在统计…</div>
+        <div v-else-if="pathError" class="path-error">
+          <el-icon><Warning /></el-icon>
+          <span>{{ pathError }}</span>
+          <span class="hint" style="margin: 0">请检查路径，或点右侧「选择文件夹」</span>
+        </div>
         <div v-else-if="info" class="stats">
           <el-tag size="small" type="info">{{ info.fileCount }} 个文件</el-tag>
           <el-tag size="small" type="info">{{ info.dirCount }} 个目录</el-tag>

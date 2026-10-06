@@ -131,6 +131,23 @@ body {
   margin: 0;
 }
 
+/* 路径无效时的内联提示，不弹 toast，避免打字过程中反复闪 */
+.path-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #fef0f0;
+  color: #f56c6c;
+  font-size: 13px;
+}
+
+.path-error .hint {
+  margin: 0 0 0 auto;
+}
+
 /* ---------------------------------------------------------------- 开关项 */
 
 .switch-row {

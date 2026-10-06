@@ -492,3 +492,42 @@ func TestOpenOutputDirValidatesPaths(t *testing.T) {
 		t.Error("空命令应当报错")
 	}
 }
+
+func TestCheckSourceDir(t *testing.T) {
+	// 不存在的路径要给出人话错误，而不是 GetFileAttributesEx 这种原生串
+	if _, err := checkSourceDir(`D:\绝对不存在的目录_zzz`); err == nil {
+		t.Fatal("不存在的路径应当报错")
+	} else if !strings.Contains(err.Error(), "路径不存在") {
+		t.Errorf("错误信息应说明路径不存在: %v", err)
+	}
+
+	// 只输到盘符就停手时，别让它去扫整个盘
+	if _, err := checkSourceDir("D:"); err == nil {
+		t.Error(`只输入 "D:" 应当报错`)
+	} else if !strings.Contains(err.Error(), "完整路径") {
+		t.Errorf(`"D:" 的错误信息应提示补全路径: %v`, err)
+	}
+
+	if _, err := checkSourceDir("   "); err == nil {
+		t.Error("空路径应当报错")
+	}
+
+	// 文件不是目录
+	f := filepath.Join(t.TempDir(), "a.txt")
+	mustWrite(t, f, 1)
+	if _, err := checkSourceDir(f); err == nil {
+		t.Error("指向文件的路径应当报错")
+	} else if !strings.Contains(err.Error(), "不是一个文件夹") {
+		t.Errorf("错误信息应说明不是文件夹: %v", err)
+	}
+
+	// 正常路径
+	dir := t.TempDir()
+	got, err := checkSourceDir(dir)
+	if err != nil {
+		t.Fatalf("合法路径不应报错: %v", err)
+	}
+	if got != filepath.Clean(dir) {
+		t.Errorf("返回路径 = %q, 期望 %q", got, filepath.Clean(dir))
+	}
+}
